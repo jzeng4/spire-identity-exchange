@@ -63,6 +63,8 @@ This is the simpler deployment model and is appropriate for small or single-node
 
 ### Mode 2: Separate Host with Workload Attestation
 
+> **Status:** Under design and development — not yet implemented.
+
 spire-identity-exchange runs on a dedicated host, separate from the SPIRE server. In this mode, spire-identity-exchange must authenticate itself to the SPIRE server before it can call `MintX509SVID`. It does this by attesting itself through the standard SPIRE workload attestation flow:
 
 1. A SPIRE agent runs on the same host as spire-identity-exchange
