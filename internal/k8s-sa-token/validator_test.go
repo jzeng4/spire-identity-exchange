@@ -20,24 +20,38 @@ func TestNewValidator(t *testing.T) {
 
 	testCases := []struct {
 		name      string
-		config    config.K8sAPIClientTlsConfig
+		config    config.K8sSATokenConfig
 		expectErr bool
 	}{
 		{
-			name: "empty config should succeed",
-			config: config.K8sAPIClientTlsConfig{
-				CertFile: "",
-				KeyFile:  "",
-				CAFile:   "",
+			name: "missing apiHost rejected",
+			config: config.K8sSATokenConfig{
+				TLS: config.K8sAPIClientTlsConfig{},
+			},
+			expectErr: true,
+		},
+		{
+			name: "minimum required: apiHost set",
+			config: config.K8sSATokenConfig{
+				APIHost: "https://kubernetes.default.svc:443",
+				TLS: config.K8sAPIClientTlsConfig{
+					CertFile: testClientCertFile,
+					KeyFile:  testClientKeyFile,
+					CAFile:   testCAFile,
+				},
 			},
 			expectErr: false,
 		},
 		{
-			name: "config with certificate files",
-			config: config.K8sAPIClientTlsConfig{
-				CertFile: testClientCertFile,
-				KeyFile:  testClientKeyFile,
-				CAFile:   testCAFile,
+			name: "with audiences configured",
+			config: config.K8sSATokenConfig{
+				APIHost:   "https://kubernetes.default.svc:443",
+				Audiences: []string{"spire-identity-exchange"},
+				TLS: config.K8sAPIClientTlsConfig{
+					CertFile: testClientCertFile,
+					KeyFile:  testClientKeyFile,
+					CAFile:   testCAFile,
+				},
 			},
 			expectErr: false,
 		},
@@ -47,25 +61,24 @@ func TestNewValidator(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			validator, err := NewValidator(tc.config, logger)
 
-			if tc.expectErr && err == nil {
-				assert.Error(t, err, "expected error but got none")
+			if tc.expectErr {
+				assert.Error(t, err)
+				assert.Nil(t, validator)
+				return
 			}
-
-			if !tc.expectErr && err != nil {
-				assert.NoError(t, err, "expected no error but got: %v", err)
-			}
-
-			if !tc.expectErr && validator == nil {
-				assert.NotNil(t, validator, "expected validator to be created")
-			}
+			assert.NoError(t, err)
+			assert.NotNil(t, validator)
 		})
 	}
 }
 
 func TestValidateToken(t *testing.T) {
 	logger := zap.NewNop()
-	cfg := config.K8sAPIClientTlsConfig{
-		CAFile: testCAFile,
+	cfg := config.K8sSATokenConfig{
+		APIHost: "https://kubernetes.default.svc:443",
+		TLS: config.K8sAPIClientTlsConfig{
+			CAFile: testCAFile,
+		},
 	}
 
 	validator, err := NewValidator(cfg, logger)

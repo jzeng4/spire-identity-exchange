@@ -240,7 +240,7 @@ curl -k -X POST https://localhost:8444/v1/mint-certificate \
 Instead of server-side key generation, you can provide your own CSR. The SPIFFE ID in the CSR must match what the server derives from the token claims using the configured `spiffeIdTemplate`. With `config.example-local.json` and the default mock token claims, the derived SPIFFE ID is:
 
 ```bash
-SPIFFE_ID="spiffe://example.org/v2/github/my-enterprise/my-org-my-repo-github-workflows-mock-workflow-yml-refs-heads-main/push"
+SPIFFE_ID="spiffe://example.org/github/my-org/my-repo/mock-workflow-yml"
 
 openssl req -new \
   -newkey rsa:2048 -nodes -keyout workload.key \
@@ -289,8 +289,10 @@ Key metrics:
 
 | Metric | Description |
 |---|---|
-| `spire-identity-exchange_operation_duration_seconds` | Latency histogram per operation (validate_token, fetch_jwks, mint_certificate) |
-| `spire-identity-exchange_operation_count_total` | Request count per operation and status code |
+| `pki_spire_identity_exchange_operation_duration_seconds` | Latency histogram per operation (`validate_token`, `fetch_jwks`, `mint_certificate_by_github_oidc`, `mint_certificate_by_k8s_sa`). Labels: `component`, `plugin`, `operation`, `status`. |
+| `pki_spire_identity_exchange_operation_count_total` | Request count, same labels and operations as above. |
+
+Standard Go runtime and process metrics are also exported with the `pki_spire_identity_exchange_` prefix (e.g. `pki_spire_identity_exchange_go_goroutines`, `pki_spire_identity_exchange_process_cpu_seconds_total`).
 
 ## Project structure
 

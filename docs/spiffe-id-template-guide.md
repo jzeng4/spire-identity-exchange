@@ -294,13 +294,15 @@ Example configuration:
 ```jsonc
 "k8sSAToken": {
   "enabled": true,
-  "spiffeIdTemplate": "spiffe://{{.trust_domain}}/k8s/ns/{{index . \"kubernetes.io/serviceaccount/namespace\"}}/sa/{{index . \"kubernetes.io/serviceaccount/service-account.name\"}}",
-  "requiredClaims": [
-    "kubernetes.io/serviceaccount/namespace",
-    "kubernetes.io/serviceaccount/service-account.name"
-  ]
+  "apiHost": "https://kubernetes.default.svc:443",
+  "audiences": ["spire-identity-exchange"],
+  "spiffeIdTemplate": "spiffe://{{.trust_domain}}/k8s/ns/{{index . \"kubernetes.io/serviceaccount/namespace\"}}/sa/{{index . \"kubernetes.io/serviceaccount/service-account.name\"}}"
 }
 ```
+
+> Templates that reference required claim keys will fail at SVID derivation time if any
+> referenced claim is missing from the validated token. Tokens whose audience does not
+> match the `audiences` list are rejected by the TokenReview call.
 
 ### Common anti-patterns
 

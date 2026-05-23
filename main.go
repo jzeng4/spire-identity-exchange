@@ -80,7 +80,7 @@ func main() {
 	// Create K8s SA token validator if enabled
 	var k8sSATokenValidator validator.TokenValidator
 	if cfg.K8sSAToken.Enabled {
-		v, err := k8ssatoken.NewValidator(cfg.K8sSAToken.TLS, &logger)
+		v, err := k8ssatoken.NewValidator(cfg.K8sSAToken, &logger)
 		if err != nil {
 			logger.Fatal("failed to create K8s SA token validator", zap.Error(err))
 		}

@@ -290,13 +290,8 @@ func (gv *githubValidator) convertJWKS(jwks jose.JSONWebKeySet) (map[string]cryp
 			gv.logger.Warn("failed to extract public key from JWK", zap.String("kid", jwk.KeyID))
 			continue
 		}
-		switch key := publicKey.(type) {
-		case crypto.PublicKey:
-			keys[jwk.KeyID] = key
-			gv.logger.Debug("Added JWK to key cache", zap.String("kid", jwk.KeyID), zap.String("algorithm", jwk.Algorithm))
-		default:
-			gv.logger.Warn("unexpected key type from JWK", zap.String("kid", jwk.KeyID), zap.String("type", fmt.Sprintf("%T", publicKey)))
-		}
+		keys[jwk.KeyID] = publicKey
+		gv.logger.Debug("Added JWK to key cache", zap.String("kid", jwk.KeyID), zap.String("algorithm", jwk.Algorithm))
 	}
 
 	if len(keys) == 0 {

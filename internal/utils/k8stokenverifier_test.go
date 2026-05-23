@@ -24,15 +24,13 @@ type mockAuthV1Client struct {
 	shouldReturnError bool
 	tokenValid        bool
 	errorMessage      string
+	returnAudiences   []string
+	gotAudiences      []string
 }
 
 // TokenReviews implements AuthenticationV1Interface
 func (m *mockAuthV1Client) TokenReviews() authenticationv1.TokenReviewInterface {
-	return &mockTokenReviewsClient{
-		shouldReturnError: m.shouldReturnError,
-		tokenValid:        m.tokenValid,
-		errorMessage:      m.errorMessage,
-	}
+	return &mockTokenReviewsClient{parent: m}
 }
 
 // SelfSubjectReviews implements AuthenticationV1Interface (required by interface)
@@ -47,24 +45,25 @@ func (m *mockAuthV1Client) RESTClient() rest.Interface {
 
 // mockTokenReviewsClient mocks the TokenReviewInterface
 type mockTokenReviewsClient struct {
-	shouldReturnError bool
-	tokenValid        bool
-	errorMessage      string
+	parent *mockAuthV1Client
 }
 
 // Create implements TokenReviewInterface
 func (m *mockTokenReviewsClient) Create(ctx context.Context, tokenReview *authv1.TokenReview, opts metav1.CreateOptions) (*authv1.TokenReview, error) {
-	if m.shouldReturnError {
-		return nil, fmt.Errorf("mock API error: %s", m.errorMessage)
+	m.parent.gotAudiences = tokenReview.Spec.Audiences
+
+	if m.parent.shouldReturnError {
+		return nil, fmt.Errorf("mock API error: %s", m.parent.errorMessage)
 	}
 
 	result := &authv1.TokenReview{
 		Status: authv1.TokenReviewStatus{
-			Authenticated: m.tokenValid,
+			Authenticated: m.parent.tokenValid,
+			Audiences:     m.parent.returnAudiences,
 		},
 	}
 
-	if !m.tokenValid {
+	if !m.parent.tokenValid {
 		result.Status.Error = "token is invalid"
 	}
 
@@ -94,7 +93,7 @@ func TestNewK8sSaTokenVerifierInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := newK8sSaTokenVerifier(tt.authClient)
+			got := newK8sSaTokenVerifier(tt.authClient, nil)
 			if (got == nil) != tt.wantNil {
 				t.Errorf("newK8sSaTokenVerifier() = %v, wantNil %v", got, tt.wantNil)
 			}
@@ -134,7 +133,7 @@ func TestNewK8sSaTokenVerifier(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewK8sSaTokenVerifier(tt.k8sAPIHost, tt.k8sClientCertFile, tt.k8sClientKeyFile, tt.k8sCAFile)
+			got, err := NewK8sSaTokenVerifier(tt.k8sAPIHost, nil, tt.k8sClientCertFile, tt.k8sClientKeyFile, tt.k8sCAFile)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewK8sSaTokenVerifier() error = %v, wantErr %v", err, tt.wantErr)
@@ -213,7 +212,7 @@ func TestK8sSaTokenVerifierImplVerify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			verifier := newK8sSaTokenVerifier(tt.authClient)
+			verifier := newK8sSaTokenVerifier(tt.authClient, nil)
 			err := verifier.Verify(tt.ctx, tt.token)
 
 			if tt.expectError {
@@ -238,7 +237,7 @@ func TestK8sSaTokenVerifierWithContextCancellation(t *testing.T) {
 			tokenValid:        true,
 		}
 
-		verifier := newK8sSaTokenVerifier(mockClient)
+		verifier := newK8sSaTokenVerifier(mockClient, nil)
 
 		cancelledCtx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -253,7 +252,7 @@ func TestK8sSaTokenVerifierWithContextCancellation(t *testing.T) {
 			tokenValid:        true,
 		}
 
-		verifier := newK8sSaTokenVerifier(mockClient)
+		verifier := newK8sSaTokenVerifier(mockClient, nil)
 
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -261,6 +260,45 @@ func TestK8sSaTokenVerifierWithContextCancellation(t *testing.T) {
 		err := verifier.Verify(timeoutCtx, validToken)
 		if err != nil {
 			t.Errorf("Unexpected error with timeout context: %v", err)
+		}
+	})
+}
+
+func TestK8sSaTokenVerifierAudienceBinding(t *testing.T) {
+	t.Run("audiences are forwarded to TokenReview Spec", func(t *testing.T) {
+		mockClient := &mockAuthV1Client{
+			tokenValid:      true,
+			returnAudiences: []string{"spire-identity-exchange"},
+		}
+		verifier := newK8sSaTokenVerifier(mockClient, []string{"spire-identity-exchange"})
+		if err := verifier.Verify(context.Background(), validToken); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(mockClient.gotAudiences) != 1 || mockClient.gotAudiences[0] != "spire-identity-exchange" {
+			t.Errorf("expected configured audiences forwarded, got %v", mockClient.gotAudiences)
+		}
+	})
+
+	t.Run("mismatched status audiences are rejected", func(t *testing.T) {
+		mockClient := &mockAuthV1Client{
+			tokenValid:      true,
+			returnAudiences: []string{"some-other-service"},
+		}
+		verifier := newK8sSaTokenVerifier(mockClient, []string{"spire-identity-exchange"})
+		err := verifier.Verify(context.Background(), validToken)
+		if err == nil || !strings.Contains(err.Error(), "do not match expected audiences") {
+			t.Errorf("expected audience-mismatch rejection, got %v", err)
+		}
+	})
+
+	t.Run("no audiences configured means no audience binding enforced", func(t *testing.T) {
+		mockClient := &mockAuthV1Client{
+			tokenValid:      true,
+			returnAudiences: []string{"any-audience"},
+		}
+		verifier := newK8sSaTokenVerifier(mockClient, nil)
+		if err := verifier.Verify(context.Background(), validToken); err != nil {
+			t.Errorf("expected no error with audience binding disabled, got: %v", err)
 		}
 	})
 }

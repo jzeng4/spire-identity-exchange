@@ -114,6 +114,19 @@ type K8sSATokenConfig struct {
 	// Whether this validator is enabled
 	Enabled bool `json:"enabled"`
 
+	// Required. Kubernetes API server URL used for the TokenReview call.
+	// Must be a trusted, operator-configured value; the token's iss claim is NEVER
+	// used as a network destination because it is attacker-controlled until the
+	// token has been verified.
+	APIHost string `json:"apiHost"`
+
+	// Optional. Expected audiences for incoming service-account tokens. When set,
+	// these are passed in the TokenReview Spec.Audiences and the response's status
+	// audiences must intersect with this list. Strongly recommended: configure a
+	// dedicated audience (e.g. "spire-identity-exchange") for tokens minted for
+	// this service so tokens issued for other recipients cannot be replayed.
+	Audiences []string `json:"audiences"`
+
 	// SPIFFE ID template using Go template syntax
 	// Available variables are raw JWT claims, e.g. "spiffe://example.org/k8s/{{.sub}}"
 	SPIFFEIDTemplate string `json:"spiffeIdTemplate"`
@@ -201,11 +214,34 @@ func (c *K8sAPIClientTlsConfig) Validate() error {
 	return errors.Join(errs...)
 }
 
+func (c *GitHubOIDCConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+	var errs []error
+	if c.Issuer == "" {
+		errs = append(errs, errors.New("githubOIDC.issuer is required when githubOIDC is enabled"))
+	}
+	if len(c.Audiences) == 0 {
+		errs = append(errs, errors.New("githubOIDC.audiences is required when githubOIDC is enabled"))
+	}
+	if c.SPIFFEIDTemplate == "" {
+		errs = append(errs, errors.New("githubOIDC.spiffeIdTemplate is required when githubOIDC is enabled"))
+	}
+	if len(c.AllowedRepositories) == 0 {
+		errs = append(errs, errors.New("githubOIDC.allowedRepositories is required when githubOIDC is enabled"))
+	}
+	return errors.Join(errs...)
+}
+
 func (c *K8sSATokenConfig) Validate() error {
 	if !c.Enabled {
 		return nil
 	}
 	var errs []error
+	if c.APIHost == "" {
+		errs = append(errs, errors.New("k8sSAToken.apiHost is required when k8sSAToken is enabled"))
+	}
 	if c.SPIFFEIDTemplate == "" {
 		errs = append(errs, errors.New("k8sSAToken.spiffeIdTemplate is required when k8sSAToken is enabled"))
 	}
@@ -219,6 +255,7 @@ func (c *SpireIdentityExchangeConfig) Validate() error {
 
 	errs = append(errs, c.Server.Validate())
 	errs = append(errs, c.SPIRE.Validate())
+	errs = append(errs, c.GitHubOIDC.Validate())
 	errs = append(errs, c.K8sSAToken.Validate())
 
 	if len(errs) > 0 {

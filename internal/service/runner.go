@@ -114,11 +114,12 @@ func runSpireIdentityExchangeServer(
 			return fmt.Errorf("failed to register HTTP gateway handler: %w", err)
 		}
 		httpServer = &http.Server{
-			Addr:    fmt.Sprintf(":%d", cfg.Server.HTTPGatewayPort),
-			Handler: gwmux,
+			Addr:      fmt.Sprintf(":%d", cfg.Server.HTTPGatewayPort),
+			Handler:   gwmux,
+			TLSConfig: tlsConfig.Clone(),
 		}
 		go func() {
-			if err := httpServer.ListenAndServeTLS(cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile); err != nil && err != http.ErrServerClosed {
+			if err := httpServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 				errCh <- err
 			}
 		}()

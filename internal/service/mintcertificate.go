@@ -88,6 +88,12 @@ func (h *SpireIdentityExchangeServer) MintCertificateByK8sSAToken(ctx context.Co
 		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("failed to validate K8s SA token: %v", err))
 	}
 	audit.TokenIssuer = claims.Issuer
+	if name := k8sSA.GetK8SClusterName(); name != "" {
+		if claims.RawClaims == nil {
+			claims.RawClaims = make(map[string]interface{}, 1)
+		}
+		claims.RawClaims["k8s_cluster_name"] = name
+	}
 
 	resp, err := h.mintFromClaims(ctx, claims, h.k8sSAToken, req, audit)
 	if err != nil {
@@ -138,19 +144,13 @@ func (h *SpireIdentityExchangeServer) mintFromClaims(
 	case req.GetMintJWTSVIDRequest() != nil:
 		audit.SVIDType = "jwt"
 		jwtReq := req.GetMintJWTSVIDRequest()
-		ttl := baseTTL
-		if jwtReq.GetTtl() > 0 {
-			ttl = jwtReq.GetTtl()
-		}
+		ttl := clampRequestedTTL(jwtReq.GetTtl(), baseTTL)
 		return h.mintJWTSVIDFromClaims(ctx, claims, handler.spiffeIDTemplate, jwtReq.GetAudiences(), ttl, audit)
 
 	case req.GetServerKeyGenRequest() != nil:
 		audit.SVIDType = "x509"
 		skgReq := req.GetServerKeyGenRequest()
-		ttl := baseTTL
-		if skgReq.GetTtl() > 0 {
-			ttl = skgReq.GetTtl()
-		}
+		ttl := clampRequestedTTL(skgReq.GetTtl(), baseTTL)
 		return h.mintX509SVIDServerKeyGen(ctx, claims, handler.spiffeIDTemplate, ttl, audit)
 
 	default:
@@ -159,6 +159,17 @@ func (h *SpireIdentityExchangeServer) mintFromClaims(
 		audit.logRejection(h.logger)
 		return nil, status.Error(codes.InvalidArgument, audit.RejectionReason)
 	}
+}
+
+// clampRequestedTTL bounds a client-supplied TTL by the configured maximum.
+// A non-positive requested TTL means "use the configured default". The returned TTL is
+// the smaller of (requested, max) so an authenticated workload cannot grant itself a
+// longer-lived credential than the operator allows.
+func clampRequestedTTL(requested, max int32) int32 {
+	if requested <= 0 || requested > max {
+		return max
+	}
+	return requested
 }
 
 // resolveTTL returns the SVID TTL for the given claims, applying any per-workflow override.

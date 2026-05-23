@@ -14,50 +14,59 @@ import (
 // Validator validates Kubernetes service account tokens.
 // It implements the validator.TokenValidator interface.
 type Validator struct {
+	// Kubernetes API server URL (operator-configured; NEVER derived from the token).
+	apiHost string
+	// Expected audiences forwarded to the TokenReview Spec (may be empty to skip audience binding).
+	audiences []string
 	// TLS configuration for authenticating with the K8s API server
-	config config.K8sAPIClientTlsConfig
+	tlsConfig config.K8sAPIClientTlsConfig
 	// Logger for logging
 	logger *zap.Logger
 }
 
 // NewValidator creates a new K8s SA token validator
-func NewValidator(cfg config.K8sAPIClientTlsConfig, logger *zap.Logger) (*Validator, error) {
-	logger.Info("Initialized K8s SA token validator - API host will be derived from token issuer field")
+func NewValidator(cfg config.K8sSATokenConfig, logger *zap.Logger) (*Validator, error) {
+	if cfg.APIHost == "" {
+		return nil, fmt.Errorf("k8sSAToken.apiHost is required")
+	}
+	logger.Info("Initialized K8s SA token validator",
+		zap.String("apiHost", cfg.APIHost),
+		zap.Strings("audiences", cfg.Audiences))
 
 	return &Validator{
-		config: cfg,
-		logger: logger,
+		apiHost:   cfg.APIHost,
+		audiences: cfg.Audiences,
+		tlsConfig: cfg.TLS,
+		logger:    logger,
 	}, nil
 }
 
 // Validate validates a Kubernetes service account token via the K8s TokenReview API
 // and returns the JWT claims. Implements validator.TokenValidator.
+//
+// The TokenReview is always sent to the operator-configured apiHost — never to a host
+// derived from the token's iss claim, which would be attacker-controlled before verification.
 func (v *Validator) Validate(ctx context.Context, token string) (*utils.Claims, error) {
 	if len(token) == 0 {
 		return nil, fmt.Errorf("token cannot be empty")
 	}
 
-	// Extract JWT claims to get issuer information (unverified at this stage)
+	// Parse the token unverified solely to surface claims for SPIFFE ID derivation.
+	// The TokenReview call (below) is the authoritative authentication step.
 	rawClaims := make(jwt.MapClaims)
 	_, _, err := new(jwt.Parser).ParseUnverified(token, rawClaims)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract JWT claims: %w", err)
 	}
 
-	// Extract issuer from claims - this will be the K8s API server URL
-	issuer, ok := rawClaims["iss"].(string)
-	if !ok || issuer == "" {
-		return nil, fmt.Errorf("missing or invalid issuer in JWT token")
-	}
+	v.logger.Info("Validating token via configured K8s API server", zap.String("apiHost", v.apiHost))
 
-	v.logger.Info("Validating token from K8s API server", zap.String("issuer", issuer))
-
-	// Verify the token using K8s TokenReview API
 	tokenVerifier, err := utils.NewK8sSaTokenVerifier(
-		issuer,
-		v.config.CertFile,
-		v.config.KeyFile,
-		v.config.CAFile,
+		v.apiHost,
+		v.audiences,
+		v.tlsConfig.CertFile,
+		v.tlsConfig.KeyFile,
+		v.tlsConfig.CAFile,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token verifier: %w", err)
