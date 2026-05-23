@@ -9,7 +9,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net/url"
-	"strings"
 	"text/template"
 	"time"
 
@@ -227,9 +226,12 @@ func (h *SpireIdentityExchangeServer) mintX509SVIDFromClaims(
 		audit.logRejection(h.logger)
 		return nil, status.Error(codes.InvalidArgument, audit.RejectionReason)
 	}
-	// Compare trust domain and path case-insensitively; sanitizeForSPIFFE lowercases
-	// claim values but a client may build the CSR from raw OIDC claims.
-	if spiffeID.TrustDomain() != csrSpiffeID.TrustDomain() || !strings.EqualFold(spiffeID.Path(), csrSpiffeID.Path()) {
+	// SPIFFE ID paths are case-sensitive per the spec, and SPIRE mints the SVID with
+	// the exact URI SAN from the supplied CSR. Clients MUST build the CSR using the
+	// normalized SPIFFE ID this server derives from the token claims; an exact match
+	// is required so the issued SVID matches the identity any other code path (JWT,
+	// server-side keygen) would produce for the same workload.
+	if spiffeID.TrustDomain() != csrSpiffeID.TrustDomain() || spiffeID.Path() != csrSpiffeID.Path() {
 		audit.FailedStage = stageCSRValidation
 		audit.RejectionReason = fmt.Sprintf("CSR SPIFFE ID mismatch: expected %s, got %s", spiffeID, parsedCSR.URIs[0].String())
 		audit.logRejection(h.logger)

@@ -180,6 +180,7 @@ func TestValidateToken(t *testing.T) {
 			claims: testData.RealisticGithubOIDCToken,
 			setupKey: func(v *githubValidator) {
 				v.keyCache.keys.Store(map[string]crypto.PublicKey{kid: publicKey})
+				v.keyCache.expiresAt.Store(time.Now().Add(time.Hour))
 			},
 			expectErr: false,
 		},
@@ -192,6 +193,7 @@ func TestValidateToken(t *testing.T) {
 			claims: testData.RealisticGithubOIDCToken,
 			setupKey: func(v *githubValidator) {
 				v.keyCache.keys.Store(map[string]crypto.PublicKey{kid: publicKey})
+				v.keyCache.expiresAt.Store(time.Now().Add(time.Hour))
 			},
 			expectErr: true,
 			errMsg:    "issuer",
@@ -214,6 +216,7 @@ func TestValidateToken(t *testing.T) {
 			}(),
 			setupKey: func(v *githubValidator) {
 				v.keyCache.keys.Store(map[string]crypto.PublicKey{kid: publicKey})
+				v.keyCache.expiresAt.Store(time.Now().Add(time.Hour))
 			},
 			expectErr: false,
 		},
@@ -226,6 +229,7 @@ func TestValidateToken(t *testing.T) {
 			claims: testData.RealisticGithubOIDCToken,
 			setupKey: func(v *githubValidator) {
 				v.keyCache.keys.Store(map[string]crypto.PublicKey{kid: publicKey})
+				v.keyCache.expiresAt.Store(time.Now().Add(time.Hour))
 			},
 			expectErr: true,
 			errMsg:    "kid",
@@ -385,6 +389,7 @@ func TestGetVerificationKeys(t *testing.T) {
 			name: "Valid keys in cache",
 			setupCache: func(cache *jwksCache) {
 				cache.keys.Store(map[string]crypto.PublicKey{kid: publicKey})
+				cache.expiresAt.Store(time.Now().Add(time.Hour))
 			},
 			expectErr: false,
 		},
@@ -400,9 +405,28 @@ func TestGetVerificationKeys(t *testing.T) {
 			name: "Empty keys in cache",
 			setupCache: func(cache *jwksCache) {
 				cache.keys.Store(map[string]crypto.PublicKey{})
+				cache.expiresAt.Store(time.Now().Add(time.Hour))
 			},
 			expectErr: true,
 			errMsg:    "empty",
+		},
+		{
+			name: "Expired cache fails closed",
+			setupCache: func(cache *jwksCache) {
+				cache.keys.Store(map[string]crypto.PublicKey{kid: publicKey})
+				cache.expiresAt.Store(time.Now().Add(-time.Minute))
+			},
+			expectErr: true,
+			errMsg:    "expired",
+		},
+		{
+			name: "Missing expiresAt fails closed",
+			setupCache: func(cache *jwksCache) {
+				cache.keys.Store(map[string]crypto.PublicKey{kid: publicKey})
+				// deliberately do not set expiresAt
+			},
+			expectErr: true,
+			errMsg:    "expiry unknown",
 		},
 	}
 
@@ -539,6 +563,7 @@ func TestValidate_Integration(t *testing.T) {
 
 	gv := validator.(*githubValidator)
 	gv.keyCache.keys.Store(map[string]crypto.PublicKey{kid: publicKey})
+	gv.keyCache.expiresAt.Store(time.Now().Add(time.Hour))
 
 	tokenString := createTestToken(t, testData.RealisticGithubOIDCToken, privateKey, kid)
 

@@ -214,6 +214,19 @@ func (gv *githubValidator) getVerificationKeys() (map[string]crypto.PublicKey, e
 		return nil, fmt.Errorf("JWKS cache contains invalid type: expected map[string]crypto.PublicKey, got %T", cachedValue)
 	}
 
+	// Fail closed when the cache is past its TTL. The background refresher (ticker at
+	// ttl/2) keeps the cache fresh under healthy conditions; expiry here means refresh
+	// has been failing long enough that trusting these keys would let a rotated or
+	// revoked key remain valid indefinitely.
+	expVal := gv.keyCache.expiresAt.Load()
+	if expVal == nil {
+		return nil, errors.New("JWKS cache expiry unknown - refusing to use cached keys")
+	}
+	exp, ok := expVal.(time.Time)
+	if !ok || time.Now().After(exp) {
+		return nil, errors.New("JWKS cache expired - background refresh stuck; refusing to verify with stale keys")
+	}
+
 	if len(keys) == 0 {
 		return nil, errors.New("JWKS cache is empty - no signing keys available")
 	}
