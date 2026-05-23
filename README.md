@@ -113,7 +113,7 @@ make build
 spire-identity-exchange is configured via a JSON file passed with `--config`.
 
 ```bash
-build/bin/spire-identity-exchange --config config.example.json
+build/bin/spire-identity-exchange --config config/config.example.json
 ```
 
 ### Full configuration reference
