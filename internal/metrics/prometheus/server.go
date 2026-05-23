@@ -57,7 +57,17 @@ func (m *MetricsServer) Start(ctx context.Context, logger *zap.Logger) error {
 	mux.Handle("/metrics", promhttp.HandlerFor(m.Registry, promhttp.HandlerOpts{}))
 
 	addr := fmt.Sprintf(":%d", m.Port)
-	server := &http.Server{Addr: addr, Handler: mux}
+	// Bound per-connection timeouts so a slow or stalled scraper can't pin file
+	// descriptors and goroutines indefinitely. Prometheus scrapes are short-lived
+	// GET requests; these limits are well beyond what a healthy scrape needs.
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	logger.Info("Starting prometheus server", zap.String("entity", m.Entity), zap.String("addr", addr))
 

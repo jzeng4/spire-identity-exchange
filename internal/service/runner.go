@@ -24,6 +24,14 @@ import (
 const (
 	shutdownTimeout    = 5 * time.Second
 	serverStartTimeout = 10 * time.Second
+
+	// HTTP gateway timeouts. The gateway is internet-facing; defaults are aimed at
+	// short MintCertificate REST calls — slow-client traffic should not be able to
+	// hold the listener open indefinitely.
+	httpReadHeaderTimeout = 5 * time.Second
+	httpReadTimeout       = 30 * time.Second
+	httpWriteTimeout      = 30 * time.Second
+	httpIdleTimeout       = 60 * time.Second
 )
 
 // Run runs spire-identity-exchange gRPC server (and optionally HTTP gateway) and waits for
@@ -118,9 +126,13 @@ func runSpireIdentityExchangeServer(
 			return fmt.Errorf("failed to register HTTP gateway handler: %w", err)
 		}
 		httpServer = &http.Server{
-			Addr:      fmt.Sprintf(":%d", cfg.Server.HTTPGatewayPort),
-			Handler:   gwmux,
-			TLSConfig: tlsConfig.Clone(),
+			Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPGatewayPort),
+			Handler:           gwmux,
+			TLSConfig:         tlsConfig.Clone(),
+			ReadHeaderTimeout: httpReadHeaderTimeout,
+			ReadTimeout:       httpReadTimeout,
+			WriteTimeout:      httpWriteTimeout,
+			IdleTimeout:       httpIdleTimeout,
 		}
 		go func() {
 			if err := httpServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
