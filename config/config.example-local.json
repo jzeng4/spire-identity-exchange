@@ -1,5 +1,4 @@
 {
-  "enabled": true,
   "name": "spire-identity-exchange",
   "logLevel": "info",
   "server": {

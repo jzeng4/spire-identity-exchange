@@ -120,7 +120,6 @@ build/bin/spire-identity-exchange --config config/config.example.json
 
 ```jsonc
 {
-  "enabled": true,
   "name": "spire-identity-exchange",
   "logLevel": "info",
 

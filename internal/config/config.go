@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 )
@@ -31,7 +32,6 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 }
 
 type SpireIdentityExchangeConfig struct {
-	Enabled    bool             `json:"enabled"`
 	Name       string           `json:"name"`
 	LogLevel   string           `json:"logLevel"`
 	Server     ServerConfig     `json:"server"`
@@ -238,6 +238,12 @@ func (c *GitHubOIDCConfig) Validate() error {
 	if len(c.AllowedRepositories) == 0 {
 		errs = append(errs, errors.New("githubOIDC.allowedRepositories is required when githubOIDC is enabled"))
 	}
+	// 0 means "use default"; anything else must be a sane positive duration. The
+	// JWKS refresher uses time.NewTicker(ttl/2), which panics on non-positive values.
+	const minJWKSCacheDuration = time.Second
+	if d := time.Duration(c.JWKSCacheDuration); d != 0 && d < minJWKSCacheDuration {
+		errs = append(errs, fmt.Errorf("githubOIDC.jwksCacheDuration must be 0 (use default) or >= %s, got %s", minJWKSCacheDuration, d))
+	}
 	return errors.Join(errs...)
 }
 
@@ -248,6 +254,16 @@ func (c *K8sSATokenConfig) Validate() error {
 	var errs []error
 	if c.APIHost == "" {
 		errs = append(errs, errors.New("k8sSAToken.apiHost is required when k8sSAToken is enabled"))
+	} else {
+		// TokenReview sends the caller's bearer token; require TLS to prevent
+		// cleartext credential exposure to a misconfigured plain-HTTP endpoint.
+		u, err := url.Parse(c.APIHost)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("k8sSAToken.apiHost %q is not a valid URL: %w", c.APIHost, err))
+		case u.Scheme != "https":
+			errs = append(errs, fmt.Errorf("k8sSAToken.apiHost must use https:// (got %q)", c.APIHost))
+		}
 	}
 	if c.SPIFFEIDTemplate == "" {
 		errs = append(errs, errors.New("k8sSAToken.spiffeIdTemplate is required when k8sSAToken is enabled"))
