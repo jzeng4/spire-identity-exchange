@@ -190,10 +190,11 @@ func TestNewGRPCHandler_InvalidTrustDomain(t *testing.T) {
 	mockValidator := &MockValidator{}
 	mockSpireClient := &MockServerClient{}
 
-	// This will panic due to spiffeid.RequireTrustDomainFromString
-	assert.Panics(t, func() {
-		NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
-	})
+	handler, err := NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
+
+	assert.Error(t, err)
+	assert.Nil(t, handler)
+	assert.Contains(t, err.Error(), "invalid spire.trustDomain")
 }
 
 // TestServerLifecycle tests a more complete server lifecycle

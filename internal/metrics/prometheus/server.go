@@ -8,8 +8,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sirupsen/logrus"
 	"github.com/spiffe/spire-identity-exchange/internal/metrics"
+	"go.uber.org/zap"
 )
 
 type MetricsServer struct {
@@ -50,27 +50,28 @@ func (m *MetricsServer) For(entity string, metrics metrics.Metrics) *MetricsServ
 	return m
 }
 
-// Start starts the metrics server and blocks until ctx is cancelled.
-func (m *MetricsServer) Start(ctx context.Context) {
+// Start starts the metrics server and blocks until ctx is cancelled or the server fails.
+// Returns nil on clean shutdown, or an error if the server failed to start or serve.
+func (m *MetricsServer) Start(ctx context.Context, logger *zap.Logger) error {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(m.Registry, promhttp.HandlerOpts{}))
 
 	addr := fmt.Sprintf(":%d", m.Port)
 	server := &http.Server{Addr: addr, Handler: mux}
 
-	logrus.SetFormatter(&logrus.JSONFormatter{})
-	logrus.Infof("Starting prometheus server for %s on %s ...", m.Entity, addr)
+	logger.Info("Starting prometheus server", zap.String("entity", m.Entity), zap.String("addr", addr))
 
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			logrus.Warnf("metrics server shutdown: %v", err)
+			logger.Warn("metrics server shutdown", zap.Error(err))
 		}
 	}()
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logrus.Fatalf("metrics server error: %v", err)
+		return fmt.Errorf("metrics server error: %w", err)
 	}
+	return nil
 }

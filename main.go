@@ -57,8 +57,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Start metrics server in background
-	go metricsServer.For("spire-identity-exchange", appMetrics).Start(ctx)
+	// Start metrics server in background. A bind/serve failure is logged but not fatal —
+	// the core gRPC service can continue to operate without /metrics.
+	go func() {
+		if err := metricsServer.For("spire-identity-exchange", appMetrics).Start(ctx, &logger); err != nil {
+			logger.Error("metrics server stopped with error", zap.Error(err))
+		}
+	}()
 	logger.Info("Metrics server initialized with runtime metrics", zap.Int("port", cfg.Server.MetricsPort))
 
 	// Create GitHub OIDC validator if enabled

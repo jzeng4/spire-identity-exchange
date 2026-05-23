@@ -44,9 +44,14 @@ func NewGRPCHandler(
 	metrics metrics.Metrics,
 	logger *zap.Logger,
 ) (*SpireIdentityExchangeServer, error) {
+	trustDomain, err := spiffeid.TrustDomainFromString(cfg.SPIRE.TrustDomain)
+	if err != nil {
+		return nil, fmt.Errorf("invalid spire.trustDomain %q: %w", cfg.SPIRE.TrustDomain, err)
+	}
+
 	server := &SpireIdentityExchangeServer{
 		spireClient: spireClient,
-		trustDomain: spiffeid.RequireTrustDomainFromString(cfg.SPIRE.TrustDomain),
+		trustDomain: trustDomain,
 		config:      cfg,
 		metrics:     metrics,
 		logger:      logger,

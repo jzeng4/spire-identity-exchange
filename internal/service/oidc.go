@@ -37,6 +37,13 @@ func (h *SpireIdentityExchangeServer) MintCertificate(ctx context.Context, req *
 		return nil, err
 	}
 
-	h.logger.Info("Minted certificate successfully", zap.String("spiffeID", response.X509Svid.Id.String()))
+	var spiffeID string
+	switch {
+	case response.X509Svid != nil && response.X509Svid.Id != nil:
+		spiffeID = response.X509Svid.Id.String()
+	case response.JwtSvid != nil && response.JwtSvid.Id != nil:
+		spiffeID = response.JwtSvid.Id.String()
+	}
+	h.logger.Info("Minted certificate successfully", zap.String("spiffeID", spiffeID))
 	return response, nil
 }

@@ -126,7 +126,7 @@ Actions workload. It is keyed on the file path, so it is stable across workflow 
 **Minimum safe template** — ownership + branch scope:
 
 ```
-spiffe://{{.trustDomain}}/github/{{.repository_owner}}/{{.repository}}/ref/{{.ref}}
+spiffe://{{.trust_domain}}/github/{{.repository_owner}}/{{.repository}}/ref/{{.ref}}
 ```
 
 Pair with `requiredClaims: ["repository_owner_id", "repository_id", "ref"]` to enforce numeric
@@ -135,13 +135,13 @@ ID presence even though the path uses human-readable names.
 **Recommended for CI workloads** — adds workflow file identity, distinguishing `ci.yml` from `deploy.yml`:
 
 ```
-spiffe://{{.trustDomain}}/github/{{.repository_owner}}/{{.repository}}/ref/{{.ref}}/wf/{{.job_workflow_ref}}
+spiffe://{{.trust_domain}}/github/{{.repository_owner}}/{{.repository}}/ref/{{.ref}}/wf/{{.job_workflow_ref}}
 ```
 
 **Recommended for production deployments** — ties identity to an approval-gated environment:
 
 ```
-spiffe://{{.trustDomain}}/github/{{.repository_owner}}/{{.repository}}/env/{{.environment}}
+spiffe://{{.trust_domain}}/github/{{.repository_owner}}/{{.repository}}/env/{{.environment}}
 ```
 
 > **Warning:** `environment` is only present in tokens issued for jobs that reference a GitHub
@@ -280,7 +280,7 @@ name must produce a different SVID, include `service-account.uid` in the templat
 **Minimum safe template** — namespace and service account name:
 
 ```
-spiffe://{{.trustDomain}}/k8s/ns/{{index . "kubernetes.io/serviceaccount/namespace"}}/sa/{{index . "kubernetes.io/serviceaccount/service-account.name"}}
+spiffe://{{.trust_domain}}/k8s/ns/{{index . "kubernetes.io/serviceaccount/namespace"}}/sa/{{index . "kubernetes.io/serviceaccount/service-account.name"}}
 ```
 
 This produces identities like:
@@ -294,7 +294,7 @@ Example configuration:
 ```jsonc
 "k8sSAToken": {
   "enabled": true,
-  "spiffeIdTemplate": "spiffe://{{.trustDomain}}/k8s/ns/{{index . \"kubernetes.io/serviceaccount/namespace\"}}/sa/{{index . \"kubernetes.io/serviceaccount/service-account.name\"}}",
+  "spiffeIdTemplate": "spiffe://{{.trust_domain}}/k8s/ns/{{index . \"kubernetes.io/serviceaccount/namespace\"}}/sa/{{index . \"kubernetes.io/serviceaccount/service-account.name\"}}",
   "requiredClaims": [
     "kubernetes.io/serviceaccount/namespace",
     "kubernetes.io/serviceaccount/service-account.name"

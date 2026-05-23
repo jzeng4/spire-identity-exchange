@@ -35,8 +35,8 @@ func (h *SpireIdentityExchangeServer) MintCertificateByGithubOIDC(ctx context.Co
 	statusCode := codes.InvalidArgument
 	now := time.Now()
 	defer func() {
-		h.metrics.IncOperationCount(constant.ComponentLabel, constant.PluginLabel, constant.OperationMintCertificate, statusCode.String())
-		h.metrics.ObserveOperationDuration(constant.ComponentLabel, constant.PluginLabel, constant.OperationMintCertificate, statusCode.String(), time.Since(now).Seconds())
+		h.metrics.IncOperationCount(constant.ComponentLabel, constant.PluginLabel, constant.OperationMintCertificateByGithubOIDC, statusCode.String())
+		h.metrics.ObserveOperationDuration(constant.ComponentLabel, constant.PluginLabel, constant.OperationMintCertificateByGithubOIDC, statusCode.String(), time.Since(now).Seconds())
 	}()
 
 	githubOIDC := req.GetGithubOIDC()
@@ -71,8 +71,8 @@ func (h *SpireIdentityExchangeServer) MintCertificateByK8sSAToken(ctx context.Co
 	statusCode := codes.InvalidArgument
 	now := time.Now()
 	defer func() {
-		h.metrics.IncOperationCount(constant.ComponentLabel, constant.PluginLabel, constant.OperationMintCertificate, statusCode.String())
-		h.metrics.ObserveOperationDuration(constant.ComponentLabel, constant.PluginLabel, constant.OperationMintCertificate, statusCode.String(), time.Since(now).Seconds())
+		h.metrics.IncOperationCount(constant.ComponentLabel, constant.PluginLabel, constant.OperationMintCertificateByK8sSA, statusCode.String())
+		h.metrics.ObserveOperationDuration(constant.ComponentLabel, constant.PluginLabel, constant.OperationMintCertificateByK8sSA, statusCode.String(), time.Since(now).Seconds())
 	}()
 
 	k8sSA := req.GetK8SSA()
@@ -112,6 +112,23 @@ func (h *SpireIdentityExchangeServer) mintFromClaims(
 	audit *auditEntry,
 ) (*proto.MintCertificateResponse, error) {
 	baseTTL := handler.resolveTTL(claims)
+
+	svidRequestCount := 0
+	if req.GetMintX509SVIDRequest() != nil {
+		svidRequestCount++
+	}
+	if req.GetMintJWTSVIDRequest() != nil {
+		svidRequestCount++
+	}
+	if req.GetServerKeyGenRequest() != nil {
+		svidRequestCount++
+	}
+	if svidRequestCount > 1 {
+		audit.FailedStage = stageCSRValidation
+		audit.RejectionReason = "multiple SVID request fields set: exactly one of mintX509SVIDRequest, mintJWTSVIDRequest, or serverKeyGenRequest must be set"
+		audit.logRejection(h.logger)
+		return nil, status.Error(codes.InvalidArgument, audit.RejectionReason)
+	}
 
 	switch {
 	case req.GetMintX509SVIDRequest() != nil:
@@ -183,6 +200,12 @@ func (h *SpireIdentityExchangeServer) mintX509SVIDFromClaims(
 	if err != nil {
 		audit.FailedStage = stageCSRValidation
 		audit.RejectionReason = fmt.Sprintf("failed to parse CSR: %v", err)
+		audit.logRejection(h.logger)
+		return nil, status.Error(codes.InvalidArgument, audit.RejectionReason)
+	}
+	if err := parsedCSR.CheckSignature(); err != nil {
+		audit.FailedStage = stageCSRValidation
+		audit.RejectionReason = fmt.Sprintf("CSR signature verification failed: %v", err)
 		audit.logRejection(h.logger)
 		return nil, status.Error(codes.InvalidArgument, audit.RejectionReason)
 	}

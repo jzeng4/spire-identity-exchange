@@ -2,6 +2,7 @@ package k8ssatoken
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -66,14 +67,17 @@ func (v *Validator) Validate(ctx context.Context, token string) (*utils.Claims, 
 		return nil, fmt.Errorf("token verification failed: %w", err)
 	}
 
-	// Convert jwt.MapClaims to map[string]interface{}
-	claimsMap := make(map[string]interface{}, len(rawClaims))
-	for k, val := range rawClaims {
-		claimsMap[k] = val
+	// Populate both RegisteredClaims and RawClaims via the Claims UnmarshalJSON.
+	claimsJSON, err := json.Marshal(rawClaims)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode claims: %w", err)
+	}
+	var claims utils.Claims
+	if err := json.Unmarshal(claimsJSON, &claims); err != nil {
+		return nil, fmt.Errorf("failed to decode claims: %w", err)
 	}
 
-	subject, _ := claimsMap["sub"].(string)
-	v.logger.Info("Token validated successfully", zap.String("issuer", issuer), zap.String("subject", subject))
+	v.logger.Info("Token validated successfully", zap.String("issuer", claims.Issuer), zap.String("subject", claims.Subject))
 
-	return &utils.Claims{RawClaims: claimsMap}, nil
+	return &claims, nil
 }

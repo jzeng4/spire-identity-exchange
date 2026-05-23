@@ -18,9 +18,14 @@ test: build
 	@go test -v ./... -coverprofile cover.out
 
 deps:
-	@echo "Installing dependencies..."
+	@echo "Downloading dependencies..."
+	@go mod download
+	@echo "Dependencies downloaded."
+
+tidy:
+	@echo "Tidying go.mod / go.sum..."
 	@go mod tidy
-	@echo "Dependencies installed."
+	@echo "go.mod / go.sum tidied."
 
 clean:
 	@echo "Cleaning up..."
@@ -63,4 +68,4 @@ proto-gen:
 		SpireIdentityExchangeApi.proto && \
 	echo "Generated SpireIdentityExchangeApi.pb.go, SpireIdentityExchangeApi_grpc.pb.go and SpireIdentityExchangeApi.pb.gw.go"
 
-.PHONY: all build test deps proto proto-gen clean
+.PHONY: all build test deps tidy proto proto-gen clean

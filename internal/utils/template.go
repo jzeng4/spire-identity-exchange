@@ -108,6 +108,8 @@ func GetStringClaim(claims map[string]interface{}, key string) string {
 	return ""
 }
 
+var consecutiveDashesRE = regexp.MustCompile(`-+`)
+
 // sanitizeForSPIFFE sanitizes a string for use in SPIFFE IDs
 func sanitizeForSPIFFE(str string) string {
 	if str == "" {
@@ -130,7 +132,7 @@ func sanitizeForSPIFFE(str string) string {
 	str = replacer.Replace(str)
 	str = strings.ToLower(str)
 
-	str = regexp.MustCompile(`-+`).ReplaceAllString(str, "-")
+	str = consecutiveDashesRE.ReplaceAllString(str, "-")
 	str = strings.Trim(str, "-")
 
 	return str

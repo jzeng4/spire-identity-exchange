@@ -164,10 +164,11 @@ func TestServer_NewGRPCHandler_InvalidTrustDomain_WithSpaces(t *testing.T) {
 	mockValidator := &MockValidator{}
 	mockSpireClient := &MockServerClient{}
 
-	// spiffeid.RequireTrustDomainFromString will panic on invalid trust domain
-	assert.Panics(t, func() {
-		NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
-	})
+	handler, err := NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
+
+	assert.Error(t, err)
+	assert.Nil(t, handler)
+	assert.Contains(t, err.Error(), "invalid spire.trustDomain")
 }
 
 func TestServer_NewGRPCHandler_InvalidTrustDomain_Empty(t *testing.T) {
@@ -185,10 +186,11 @@ func TestServer_NewGRPCHandler_InvalidTrustDomain_Empty(t *testing.T) {
 	mockValidator := &MockValidator{}
 	mockSpireClient := &MockServerClient{}
 
-	// spiffeid.RequireTrustDomainFromString will panic on empty trust domain
-	assert.Panics(t, func() {
-		NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
-	})
+	handler, err := NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
+
+	assert.Error(t, err)
+	assert.Nil(t, handler)
+	assert.Contains(t, err.Error(), "invalid spire.trustDomain")
 }
 
 func TestServer_NewGRPCHandler_InvalidTrustDomain_WithScheme(t *testing.T) {
@@ -206,7 +208,7 @@ func TestServer_NewGRPCHandler_InvalidTrustDomain_WithScheme(t *testing.T) {
 	mockValidator := &MockValidator{}
 	mockSpireClient := &MockServerClient{}
 
-	// Surprisingly, spiffeid.RequireTrustDomainFromString accepts the scheme and parses it correctly
+	// spiffeid.TrustDomainFromString accepts the scheme and parses out the domain.
 	handler, err := NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
 
 	// It should succeed and extract the domain part
@@ -387,10 +389,11 @@ func TestServer_NewGRPCHandler_MultilineTrustDomain(t *testing.T) {
 	mockValidator := &MockValidator{}
 	mockSpireClient := &MockServerClient{}
 
-	// Should panic on invalid trust domain with newline
-	assert.Panics(t, func() {
-		NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
-	})
+	handler, err := NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
+
+	assert.Error(t, err)
+	assert.Nil(t, handler)
+	assert.Contains(t, err.Error(), "invalid spire.trustDomain")
 }
 
 func TestServer_NewGRPCHandler_SubdomainTrustDomain(t *testing.T) {
@@ -419,42 +422,42 @@ func TestServer_NewGRPCHandler_DifferentTrustDomainFormats(t *testing.T) {
 	testCases := []struct {
 		name        string
 		trustDomain string
-		shouldPanic bool
+		shouldError bool
 	}{
 		{
 			name:        "Simple domain",
 			trustDomain: "example.org",
-			shouldPanic: false,
+			shouldError: false,
 		},
 		{
 			name:        "Subdomain",
 			trustDomain: "test.example.org",
-			shouldPanic: false,
+			shouldError: false,
 		},
 		{
 			name:        "With dash",
 			trustDomain: "my-domain.org",
-			shouldPanic: false,
+			shouldError: false,
 		},
 		{
 			name:        "With underscore",
 			trustDomain: "my_domain.org",
-			shouldPanic: false,
+			shouldError: false,
 		},
 		{
 			name:        "Localhost",
 			trustDomain: "localhost",
-			shouldPanic: false,
+			shouldError: false,
 		},
 		{
 			name:        "With port",
 			trustDomain: "example.org:8080",
-			shouldPanic: true,
+			shouldError: true,
 		},
 		{
 			name:        "With path",
 			trustDomain: "example.org/path",
-			shouldPanic: true,
+			shouldError: true,
 		},
 	}
 
@@ -474,12 +477,11 @@ func TestServer_NewGRPCHandler_DifferentTrustDomainFormats(t *testing.T) {
 			mockValidator := &MockValidator{}
 			mockSpireClient := &MockServerClient{}
 
-			if tc.shouldPanic {
-				assert.Panics(t, func() {
-					NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
-				}, "Expected panic for trust domain: %s", tc.trustDomain)
+			handler, err := NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
+			if tc.shouldError {
+				assert.Error(t, err, "Expected error for trust domain: %s", tc.trustDomain)
+				assert.Nil(t, handler)
 			} else {
-				handler, err := NewGRPCHandler(mockSpireClient, cfg, mockValidator, nil, nil, logger)
 				require.NoError(t, err)
 				assert.NotNil(t, handler)
 				assert.Equal(t, tc.trustDomain, handler.trustDomain.String())
