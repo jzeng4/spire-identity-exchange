@@ -75,9 +75,18 @@ func main() {
 		}
 		// In-memory replay cache only protects against replay within this process. Multi-replica
 		// deployments need a shared backend (e.g. Redis) — a workload could otherwise replay the
-		// same token against a different replica. A pluggable backend is tracked as a follow-up;
-		// for now operators running >1 replica must serialize through a single instance, gate
-		// load-balancing to sticky routing, or accept the risk.
+		// same token against a different replica. For now operators running >1 replica must
+		// serialize through a single instance, gate load-balancing to sticky routing, or accept
+		// the risk.
+		//
+		// TODO(replay-cache-backend): implement a pluggable ReplayCache backend (Redis first).
+		//   - Add a `replayCache` block to SpireIdentityExchangeConfig (kind: memory|redis, addr,
+		//     password, db, key prefix, ttl).
+		//   - Implement RedisReplayCache satisfying the existing cache.ReplayCache interface.
+		//   - Wire selection here based on cfg.ReplayCache.Kind; default remains in-memory.
+		//   - Add integration tests with miniredis. Cross-replica replay rejection must be
+		//     verified end-to-end (two SIE instances + one shared Redis).
+		//   - Drop the WARN log below once a shared backend is configured.
 		githubOIDCValidator = cache.NewReplayCheckingValidator(v, cache.NewInMemoryReplayCache(ctx))
 		logger.Info("GitHub OIDC validator enabled with in-memory replay cache")
 		logger.Warn("replay cache is in-memory only: multi-replica deployments can be bypassed by replaying a token against a different replica. Run a single replica until a shared backend is configured.")
