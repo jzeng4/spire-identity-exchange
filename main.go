@@ -108,7 +108,9 @@ func main() {
 	}
 
 	// Run the service
-	service.Run(ctx, cfg, spireClient, githubOIDCValidator, k8sSATokenValidator, appMetrics, &logger)
+	if err := service.Run(ctx, cfg, spireClient, githubOIDCValidator, k8sSATokenValidator, appMetrics, &logger); err != nil {
+		os.Exit(1)
+	}
 }
 
 func parseFlags(logger *zap.Logger) *config.SpireIdentityExchangeConfig {

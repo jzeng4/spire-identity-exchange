@@ -136,7 +136,9 @@ func (h *SpireIdentityExchangeServer) mintFromClaims(
 	switch {
 	case req.GetMintX509SVIDRequest() != nil:
 		audit.SVIDType = "x509"
-		return h.mintX509SVIDFromClaims(ctx, claims, handler.spiffeIDTemplate, req.GetMintX509SVIDRequest().GetCsr(), baseTTL, audit)
+		x509Req := req.GetMintX509SVIDRequest()
+		ttl := clampRequestedTTL(x509Req.GetTtl(), baseTTL)
+		return h.mintX509SVIDFromClaims(ctx, claims, handler.spiffeIDTemplate, x509Req.GetCsr(), ttl, audit)
 
 	case req.GetMintJWTSVIDRequest() != nil:
 		audit.SVIDType = "jwt"

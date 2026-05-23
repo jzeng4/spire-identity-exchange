@@ -227,16 +227,23 @@ Start spire-identity-exchange **after** the mock OIDC server so the initial JWKS
 
 **4. Mint a certificate** using the token printed in step 2:
 
+> **Each token is single-use.** The GitHub OIDC validator caches the token's `jti` after a
+> successful mint to prevent replay, so the second example below — or any of the CSR / K8s
+> examples that follow — will be rejected with `token replay detected` if run with the same
+> `GITHUB_TOKEN`. Pick one example per token, or restart the mock OIDC server (step 2) to
+> get a fresh token+JWKS pair, then restart spire-identity-exchange (step 3) so it picks up
+> the new JWKS. For a fully automated alternative see [scripts/e2e-local.sh](scripts/e2e-local.sh).
+
 ```bash
 export GITHUB_TOKEN="<token from step 2>"
 
-# gRPC (server-side key generation — no CSR needed)
+# Option A — gRPC (server-side key generation — no CSR needed)
 grpcurl -insecure \
   -d "{\"githubOIDC\":{\"githubToken\":\"${GITHUB_TOKEN}\"},\"serverKeyGenRequest\":{}}" \
   localhost:8443 \
   proto.spiffe.spireidentityexchange.SpireIdentityExchangeApi/MintCertificate
 
-# HTTP gateway
+# Option B — HTTP gateway (requires a fresh token; see note above)
 curl -k -X POST https://localhost:8444/v1/mint-certificate \
   -H "Content-Type: application/json" \
   -d "{\"githubOIDC\":{\"githubToken\":\"${GITHUB_TOKEN}\"},\"serverKeyGenRequest\":{}}"
@@ -245,6 +252,9 @@ curl -k -X POST https://localhost:8444/v1/mint-certificate \
 ### Testing with a CSR (client-side key generation)
 
 Instead of server-side key generation, you can provide your own CSR. The SPIFFE ID in the CSR must match what the server derives from the token claims using the configured `spiffeIdTemplate`. With `config.example-local.json` and the default mock token claims, the derived SPIFFE ID is:
+
+> Restart the mock OIDC server and spire-identity-exchange before running this if you've
+> already used `GITHUB_TOKEN` above — the replay cache will reject a second use.
 
 ```bash
 SPIFFE_ID="spiffe://example.org/github/my-org/my-repo/mock-workflow-yml"

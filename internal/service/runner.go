@@ -26,8 +26,11 @@ const (
 	serverStartTimeout = 10 * time.Second
 )
 
-// Run runs spire-identity-exchange gRPC server (and optionally HTTP gateway) and waits for termination signals.
-// Pass nil for a validator to disable that auth method.
+// Run runs spire-identity-exchange gRPC server (and optionally HTTP gateway) and waits for
+// termination signals. Pass nil for a validator to disable that auth method.
+// Returns the first error encountered during startup or runtime so the caller can exit
+// non-zero — a swallowed bind/TLS failure looks identical to a clean shutdown to a
+// supervisor and would mask broken deployments.
 func Run(
 	ctx context.Context,
 	cfg *config.SpireIdentityExchangeConfig,
@@ -36,12 +39,13 @@ func Run(
 	k8sSATokenValidator validator.TokenValidator,
 	metrics metrics.Metrics,
 	logger *zap.Logger,
-) {
+) error {
 	if err := runSpireIdentityExchangeServer(ctx, cfg, spireClient, githubOIDCValidator, k8sSATokenValidator, metrics, logger); err != nil {
 		logger.Error("spire-identity-exchange error", zap.Error(err))
-	} else {
-		logger.Info("spire-identity-exchange server stopped gracefully")
+		return err
 	}
+	logger.Info("spire-identity-exchange server stopped gracefully")
+	return nil
 }
 
 // runSpireIdentityExchangeServer starts the gRPC server and, if httpGatewayPort is set,
@@ -129,9 +133,22 @@ func runSpireIdentityExchangeServer(
 			zap.String("key_file", cfg.Server.TLS.KeyFile))
 	}
 
+	// stopStarted tears down anything we already brought up. Used when one server fails to
+	// start while the other is already listening — without this, a bind failure on the HTTP
+	// gateway would leak the gRPC listener (port stays bound, supervisor restarts re-fail).
+	stopStarted := func() {
+		grpcServer.Stop()
+		if httpServer != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer cancel()
+			_ = httpServer.Shutdown(shutdownCtx)
+		}
+	}
+
 	// Give servers a moment to start; surface any immediate bind/listen errors.
 	select {
 	case err := <-errCh:
+		stopStarted()
 		if err != nil {
 			return fmt.Errorf("failed to start server: %w", err)
 		}

@@ -33,6 +33,10 @@ const (
 	maxBackoffInterval         = 30 * time.Second
 	backOffRandomizationFactor = 0.5
 	backoffMultiplier          = 2.0
+	// jwksHTTPTimeout bounds each JWKS fetch. Without this, a JWKS endpoint that
+	// accepts the connection but never responds blocks the initial Start (the
+	// outer ctx is only cancelled on process shutdown).
+	jwksHTTPTimeout = 10 * time.Second
 	// largeLeeway is a very large leeway (~100 years) used to effectively disable
 	// time-based validation (exp, nbf, iat) while keeping other validations active
 	largeLeeway = 876000 * time.Hour
@@ -76,7 +80,7 @@ func NewValidator(ctx context.Context, cfg config.GitHubOIDCConfig, m metrics.Me
 			keys: atomic.Value{},
 			ttl:  cacheTTL,
 		},
-		httpClient: http.DefaultClient,
+		httpClient: &http.Client{Timeout: jwksHTTPTimeout},
 	}, nil
 }
 
