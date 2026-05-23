@@ -1,0 +1,12 @@
+name: spire-identity-exchange
+
+sources:
+  go: true
+
+allowed:
+  - apache-2.0
+  - bsd-2-clause
+  - bsd-3-clause
+  - mit
+  - isc
+  - mpl-2.0
