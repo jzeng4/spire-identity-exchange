@@ -32,6 +32,10 @@ const (
 	httpReadTimeout       = 30 * time.Second
 	httpWriteTimeout      = 30 * time.Second
 	httpIdleTimeout       = 60 * time.Second
+	// MintCertificate requests carry a JWT (a few KB) and an optional CSR (~1 KB DER
+	// base64-encoded). 256 KiB is well above legitimate sizes and small enough that
+	// a malicious client cannot trickle a giant body to exhaust memory.
+	httpMaxRequestBodyBytes int64 = 256 * 1024
 )
 
 // Run runs spire-identity-exchange gRPC server (and optionally HTTP gateway) and waits for
@@ -127,7 +131,7 @@ func runSpireIdentityExchangeServer(
 		}
 		httpServer = &http.Server{
 			Addr:              fmt.Sprintf(":%d", cfg.Server.HTTPGatewayPort),
-			Handler:           gwmux,
+			Handler:           http.MaxBytesHandler(gwmux, httpMaxRequestBodyBytes),
 			TLSConfig:         tlsConfig.Clone(),
 			ReadHeaderTimeout: httpReadHeaderTimeout,
 			ReadTimeout:       httpReadTimeout,

@@ -16,14 +16,16 @@ type Claims struct {
 
 // UnmarshalJSON implements json.Unmarshaler to populate both RegisteredClaims and RawClaims
 func (c *Claims) UnmarshalJSON(data []byte) error {
-	// First, unmarshal into RegisteredClaims
+	// Reset RegisteredClaims so a reused Claims value doesn't leak fields from a
+	// prior token (e.g. an old Audience or ExpiresAt) into the new one.
+	c.RegisteredClaims = jwt.RegisteredClaims{}
 	if err := json.Unmarshal(data, &c.RegisteredClaims); err != nil {
 		return err
 	}
 
-	// Then, unmarshal into RawClaims to get all claims
-	if c.RawClaims == nil {
-		c.RawClaims = make(map[string]interface{})
-	}
+	// Always allocate a fresh map; unmarshalling into a non-nil map updates keys but
+	// does not delete keys absent from the new payload, which would leak claims
+	// across tokens if Claims is reused.
+	c.RawClaims = make(map[string]interface{})
 	return json.Unmarshal(data, &c.RawClaims)
 }

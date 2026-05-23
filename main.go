@@ -37,7 +37,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
-	defer rawLogger.Sync() //nolint:errcheck
+	// Closure (not `defer rawLogger.Sync()`) so a later reassignment of rawLogger —
+	// when cfg.LogLevel rebuilds the logger — still gets Sync'd at return.
+	defer func() { _ = rawLogger.Sync() }()
 	logger := *rawLogger
 
 	// Parse configuration from flags
