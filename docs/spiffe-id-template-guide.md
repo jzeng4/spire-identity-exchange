@@ -240,16 +240,22 @@ for the canonical token reference.
 | `sub` | Composite subject. Format: `system:serviceaccount:<namespace>:<name>`. | Stable while SA exists | `system:serviceaccount:prod:payment-processor` |
 | `iss` | Issuer. The Kubernetes API server URL or configured issuer. | Stable (identifies the cluster) | `https://kubernetes.default.svc` |
 | `aud` | Audience. Set at token request time. | Operator-defined | `spire-identity-exchange` |
-| `kubernetes.io/serviceaccount/namespace` | Namespace of the service account. | Stable | `prod` |
-| `kubernetes.io/serviceaccount/service-account.name` | Name of the service account. | Stable while SA exists | `payment-processor` |
-| `kubernetes.io/serviceaccount/service-account.uid` | Immutable UID of the service account. Survives renames. | Permanent | `abc123-...` |
-| `kubernetes.io/serviceaccount/pod.name` | Name of the pod the token is bound to. Only present in pod-bound tokens. | Ephemeral (pod lifetime) | `payment-processor-abc12` |
-| `kubernetes.io/serviceaccount/pod.uid` | UID of the bound pod. Only present in pod-bound tokens. | Ephemeral | `xyz789-...` |
-| `kubernetes.io/node/name` | Name of the node. Only present in node-bound tokens. | Stable while node exists | `node-1` |
+| `kubernetes.io.namespace` | Namespace of the service account. | Stable | `prod` |
+| `kubernetes.io.serviceaccount.name` | Name of the service account. | Stable while SA exists | `payment-processor` |
+| `kubernetes.io.serviceaccount.uid` | Immutable UID of the service account. Survives renames. | Permanent | `abc123-...` |
+| `kubernetes.io.pod.name` | Name of the pod the token is bound to. Only present in pod-bound tokens. | Ephemeral (pod lifetime) | `payment-processor-abc12` |
+| `kubernetes.io.pod.uid` | UID of the bound pod. Only present in pod-bound tokens. | Ephemeral | `xyz789-...` |
+| `kubernetes.io.node.name` | Name of the node. Only present in node-bound tokens. | Stable while node exists | `node-1` |
 
-> **Note on claim names:** claims prefixed with `kubernetes.io/` contain characters that are not
-> valid Go template field names. Access them using the index function:
-> `{{index . "kubernetes.io/serviceaccount/namespace"}}`.
+> **Note on claim names:** projected service-account tokens (from `kubectl create token` and
+> the TokenRequest API) nest these fields under a `kubernetes.io` object. Templates access
+> them with chained `index`: `{{index . "kubernetes.io" "namespace"}}`,
+> `{{index . "kubernetes.io" "serviceaccount" "name"}}`.
+>
+> Legacy secret-mounted service-account tokens (pre-1.21, no longer produced by default) used
+> flat keys like `kubernetes.io/serviceaccount/namespace`. If you still need to support those,
+> use `{{index . "kubernetes.io/serviceaccount/namespace"}}` for that token type and gate the
+> deployment to one form or the other; the two formats are not interchangeable.
 
 ### Recommended claims for encoding in the SPIFFE ID
 
@@ -260,27 +266,26 @@ to identify pods.
 
 | Claim | Why it is load-bearing |
 |---|---|
-| `kubernetes.io/serviceaccount/namespace` | Namespace is the primary isolation boundary in Kubernetes. Without it, a service account named `app` in any namespace gets the same SVID. |
-| `kubernetes.io/serviceaccount/service-account.name` | Scopes the identity to a specific workload within the namespace. |
+| `kubernetes.io.namespace` | Namespace is the primary isolation boundary in Kubernetes. Without it, a service account named `app` in any namespace gets the same SVID. |
+| `kubernetes.io.serviceaccount.name` | Scopes the identity to a specific workload within the namespace. |
 
 For high-security scenarios where a service account being deleted and recreated with the same
-name must produce a different SVID, include `service-account.uid` in the template or in
-`requiredClaims`.
+name must produce a different SVID, include `kubernetes.io.serviceaccount.uid` in the template.
 
 ### Claims to never use as the sole identifier
 
 | Claim | Why |
 |---|---|
 | `iss` alone | Identifies the cluster, not the workload. Every service account in the cluster shares the same issuer. |
-| `kubernetes.io/serviceaccount/pod.name` | Pod names are ephemeral. A new pod for the same workload receives a different name and therefore a different SVID. Downstream relying parties cannot write durable policy against it. Use for audit context only. |
+| `kubernetes.io.pod.name` | Pod names are ephemeral. A new pod for the same workload receives a different name and therefore a different SVID. Downstream relying parties cannot write durable policy against it. Use for audit context only. |
 | `sub` unparsed | The composite `system:serviceaccount:<ns>:<name>` string couples downstream policy to a colon-separated format. Prefer encoding namespace and SA name as structured path segments for clarity and future resilience. |
 
 ### Canonical reference template
 
-**Minimum safe template** — namespace and service account name:
+**Minimum safe template** — namespace and service account name (projected tokens):
 
 ```
-spiffe://{{.trust_domain}}/k8s/ns/{{index . "kubernetes.io/serviceaccount/namespace"}}/sa/{{index . "kubernetes.io/serviceaccount/service-account.name"}}
+spiffe://{{.trust_domain}}/k8s/ns/{{index . "kubernetes.io" "namespace"}}/sa/{{index . "kubernetes.io" "serviceaccount" "name"}}
 ```
 
 This produces identities like:
@@ -296,7 +301,7 @@ Example configuration:
   "enabled": true,
   "apiHost": "https://kubernetes.default.svc:443",
   "audiences": ["spire-identity-exchange"],
-  "spiffeIdTemplate": "spiffe://{{.trust_domain}}/k8s/ns/{{index . \"kubernetes.io/serviceaccount/namespace\"}}/sa/{{index . \"kubernetes.io/serviceaccount/service-account.name\"}}"
+  "spiffeIdTemplate": "spiffe://{{.trust_domain}}/k8s/ns/{{index . \"kubernetes.io\" \"namespace\"}}/sa/{{index . \"kubernetes.io\" \"serviceaccount\" \"name\"}}"
 }
 ```
 

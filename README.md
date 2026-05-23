@@ -186,7 +186,11 @@ Templates use Go's `text/template` syntax. For GitHub OIDC, all JWT claims are a
 | `{{.sha}}` | Commit SHA |
 | `{{.sub}}` | Token subject |
 
-For Kubernetes SA tokens, all raw JWT claims are available directly (e.g. `{{.sub}}`, `{{index . "kubernetes.io/serviceaccount/namespace"}}`).
+For Kubernetes SA tokens, all raw JWT claims are available directly. Modern projected
+service-account tokens (produced by `kubectl create token` and the TokenRequest API) nest
+the cluster-side fields under a `kubernetes.io` object, so use chained `index`:
+`{{.sub}}`, `{{index . "kubernetes.io" "namespace"}}`,
+`{{index . "kubernetes.io" "serviceaccount" "name"}}`.
 
 For a full security reference — including claim inventories, recommended encoding/gating claims, claims to avoid, canonical templates, and common anti-patterns — see [docs/spiffe-id-template-guide.md](docs/spiffe-id-template-guide.md).
 

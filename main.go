@@ -73,8 +73,14 @@ func main() {
 		if err != nil {
 			logger.Fatal("failed to create GitHub OIDC validator", zap.Error(err))
 		}
+		// In-memory replay cache only protects against replay within this process. Multi-replica
+		// deployments need a shared backend (e.g. Redis) — a workload could otherwise replay the
+		// same token against a different replica. A pluggable backend is tracked as a follow-up;
+		// for now operators running >1 replica must serialize through a single instance, gate
+		// load-balancing to sticky routing, or accept the risk.
 		githubOIDCValidator = cache.NewReplayCheckingValidator(v, cache.NewInMemoryReplayCache(ctx))
-		logger.Info("GitHub OIDC validator enabled with replay cache")
+		logger.Info("GitHub OIDC validator enabled with in-memory replay cache")
+		logger.Warn("replay cache is in-memory only: multi-replica deployments can be bypassed by replaying a token against a different replica. Run a single replica until a shared backend is configured.")
 	}
 
 	// Create K8s SA token validator if enabled
