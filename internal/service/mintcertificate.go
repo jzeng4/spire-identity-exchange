@@ -54,7 +54,9 @@ func (h *SpireIdentityExchangeServer) MintCertificateByGithubOIDC(ctx context.Co
 
 	resp, err := h.mintFromClaims(ctx, claims, h.githubOIDC, req, audit)
 	if err != nil {
-		statusCode = codes.Internal
+		// Preserve the gRPC code embedded in the error so client-input failures
+		// (InvalidArgument) aren't mislabeled as server failures (Internal) in metrics.
+		statusCode = status.Code(err)
 		// audit.logRejection was already called inside mintFromClaims
 		return nil, err
 	}
@@ -90,7 +92,9 @@ func (h *SpireIdentityExchangeServer) MintCertificateByK8sSAToken(ctx context.Co
 
 	resp, err := h.mintFromClaims(ctx, claims, h.k8sSAToken, req, audit)
 	if err != nil {
-		statusCode = codes.Internal
+		// Preserve the gRPC code embedded in the error so client-input failures
+		// (InvalidArgument) aren't mislabeled as server failures (Internal) in metrics.
+		statusCode = status.Code(err)
 		// audit.logRejection was already called inside mintFromClaims
 		return nil, err
 	}
