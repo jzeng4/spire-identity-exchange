@@ -16,28 +16,40 @@ import (
 type Validator struct {
 	// Kubernetes API server URL (operator-configured; NEVER derived from the token).
 	apiHost string
-	// Expected audiences forwarded to the TokenReview Spec (may be empty to skip audience binding).
-	audiences []string
-	// TLS configuration for authenticating with the K8s API server
-	tlsConfig config.K8sAPIClientTlsConfig
+	// Pre-built TokenReview verifier. The underlying clientset is goroutine-safe and
+	// reuses HTTP/TLS connections to the API server across requests.
+	verifier utils.K8sSaTokenVerifier
 	// Logger for logging
 	logger *zap.Logger
 }
 
-// NewValidator creates a new K8s SA token validator
+// NewValidator creates a new K8s SA token validator. The TokenReview verifier is
+// constructed once here so the underlying Kubernetes client (and its HTTP/TLS state)
+// is reused across requests rather than rebuilt per validation.
 func NewValidator(cfg config.K8sSATokenConfig, logger *zap.Logger) (*Validator, error) {
 	if cfg.APIHost == "" {
 		return nil, fmt.Errorf("k8sSAToken.apiHost is required")
 	}
+
+	verifier, err := utils.NewK8sSaTokenVerifier(
+		cfg.APIHost,
+		cfg.Audiences,
+		cfg.TLS.CertFile,
+		cfg.TLS.KeyFile,
+		cfg.TLS.CAFile,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token verifier: %w", err)
+	}
+
 	logger.Info("Initialized K8s SA token validator",
 		zap.String("apiHost", cfg.APIHost),
 		zap.Strings("audiences", cfg.Audiences))
 
 	return &Validator{
-		apiHost:   cfg.APIHost,
-		audiences: cfg.Audiences,
-		tlsConfig: cfg.TLS,
-		logger:    logger,
+		apiHost:  cfg.APIHost,
+		verifier: verifier,
+		logger:   logger,
 	}, nil
 }
 
@@ -61,18 +73,7 @@ func (v *Validator) Validate(ctx context.Context, token string) (*utils.Claims, 
 
 	v.logger.Info("Validating token via configured K8s API server", zap.String("apiHost", v.apiHost))
 
-	tokenVerifier, err := utils.NewK8sSaTokenVerifier(
-		v.apiHost,
-		v.audiences,
-		v.tlsConfig.CertFile,
-		v.tlsConfig.KeyFile,
-		v.tlsConfig.CAFile,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token verifier: %w", err)
-	}
-
-	if err = tokenVerifier.Verify(ctx, token); err != nil {
+	if err := v.verifier.Verify(ctx, token); err != nil {
 		return nil, fmt.Errorf("token verification failed: %w", err)
 	}
 

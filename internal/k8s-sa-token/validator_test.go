@@ -9,12 +9,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	testCAFile         = "/etc/spire-identity-exchange/ca-bundle.crt"
-	testClientCertFile = "/etc/ssl/certs/client.crt"
-	testClientKeyFile  = "/etc/ssl/private/client.key"
-)
-
 func TestNewValidator(t *testing.T) {
 	logger := zap.NewNop()
 
@@ -34,11 +28,6 @@ func TestNewValidator(t *testing.T) {
 			name: "minimum required: apiHost set",
 			config: config.K8sSATokenConfig{
 				APIHost: "https://kubernetes.default.svc:443",
-				TLS: config.K8sAPIClientTlsConfig{
-					CertFile: testClientCertFile,
-					KeyFile:  testClientKeyFile,
-					CAFile:   testCAFile,
-				},
 			},
 			expectErr: false,
 		},
@@ -47,11 +36,6 @@ func TestNewValidator(t *testing.T) {
 			config: config.K8sSATokenConfig{
 				APIHost:   "https://kubernetes.default.svc:443",
 				Audiences: []string{"spire-identity-exchange"},
-				TLS: config.K8sAPIClientTlsConfig{
-					CertFile: testClientCertFile,
-					KeyFile:  testClientKeyFile,
-					CAFile:   testCAFile,
-				},
 			},
 			expectErr: false,
 		},
@@ -76,9 +60,6 @@ func TestValidateToken(t *testing.T) {
 	logger := zap.NewNop()
 	cfg := config.K8sSATokenConfig{
 		APIHost: "https://kubernetes.default.svc:443",
-		TLS: config.K8sAPIClientTlsConfig{
-			CAFile: testCAFile,
-		},
 	}
 
 	validator, err := NewValidator(cfg, logger)
