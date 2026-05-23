@@ -276,6 +276,14 @@ func (c *K8sSATokenConfig) Validate() error {
 func (c *SpireIdentityExchangeConfig) Validate() error {
 	var errs []error
 
+	if c.LogLevel != "" {
+		switch c.LogLevel {
+		case "debug", "info", "warn", "error", "dpanic", "panic", "fatal":
+		default:
+			errs = append(errs, fmt.Errorf("logLevel %q is not a recognized level (debug|info|warn|error|dpanic|panic|fatal)", c.LogLevel))
+		}
+	}
+
 	errs = append(errs, c.Server.Validate())
 	errs = append(errs, c.SPIRE.Validate())
 	errs = append(errs, c.GitHubOIDC.Validate())

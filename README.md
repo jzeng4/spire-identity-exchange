@@ -226,12 +226,15 @@ Start spire-identity-exchange **after** the mock OIDC server so the initial JWKS
 
 **4. Mint a certificate** using the token printed in step 2:
 
-> **Each token is single-use.** The GitHub OIDC validator caches the token's `jti` after a
-> successful mint to prevent replay, so the second example below — or any of the CSR / K8s
-> examples that follow — will be rejected with `token replay detected` if run with the same
-> `GITHUB_TOKEN`. Pick one example per token, or restart the mock OIDC server (step 2) to
-> get a fresh token+JWKS pair, then restart spire-identity-exchange (step 3) so it picks up
-> the new JWKS. For a fully automated alternative see [scripts/e2e-local.sh](scripts/e2e-local.sh).
+> **Each token is single-use (single attempted use).** The GitHub OIDC validator records
+> the token's `jti` as soon as token validation succeeds — before MintCertificate runs —
+> so the second example below, or any of the CSR / K8s examples that follow, will be
+> rejected with `token replay detected` if run with the same `GITHUB_TOKEN`, even if the
+> earlier call ultimately failed. This is intentional: marking after a successful mint
+> would leave a race window in which a concurrent replay could slip through. Pick one
+> example per token, or restart the mock OIDC server (step 2) to get a fresh token+JWKS
+> pair, then restart spire-identity-exchange (step 3) so it picks up the new JWKS. For a
+> fully automated alternative see [scripts/e2e-local.sh](scripts/e2e-local.sh).
 
 ```bash
 export GITHUB_TOKEN="<token from step 2>"

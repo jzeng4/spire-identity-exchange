@@ -19,24 +19,55 @@ import (
 	"github.com/spiffe/spire-identity-exchange/internal/validator"
 	"github.com/spiffe/spire/cmd/spire-server/util"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	// Setup logger
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+// run holds the entire main body so deferred cleanup (logger Sync, SPIRE client Release,
+// signal context stop) runs on error paths too. main() calls os.Exit only after run
+// returns, never inline — os.Exit bypasses defers.
+func run() error {
+	// Bootstrap logger for config loading; gets replaced once cfg.LogLevel is known.
 	rawLogger, err := zap.NewProduction()
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize logger: %v", err))
+		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	defer rawLogger.Sync() //nolint:errcheck
 	logger := *rawLogger
 
 	// Parse configuration from flags
-	cfg := parseFlags(&logger)
+	cfg, err := parseFlags(&logger)
+	if err != nil {
+		return err
+	}
+
+	// Honor cfg.LogLevel. Config validation has already rejected unsupported strings,
+	// so UnmarshalText here is safe; empty defaults to info via the bootstrap logger.
+	if cfg.LogLevel != "" {
+		var level zapcore.Level
+		if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
+			return fmt.Errorf("invalid logLevel %q: %w", cfg.LogLevel, err)
+		}
+		prodCfg := zap.NewProductionConfig()
+		prodCfg.Level = zap.NewAtomicLevelAt(level)
+		newLogger, err := prodCfg.Build()
+		if err != nil {
+			return fmt.Errorf("failed to reconfigure logger at level %q: %w", cfg.LogLevel, err)
+		}
+		rawLogger = newLogger
+		logger = *rawLogger
+	}
 
 	// Create SPIRE client
 	socketPath := cfg.SPIRE.UnixSocketPath
 	if socketPath == "" {
-		logger.Fatal("unix_socket_path is required")
+		logger.Error("unix_socket_path is required")
+		return fmt.Errorf("unix_socket_path is required")
 	}
 
 	spireClient, err := util.NewServerClient(&net.UnixAddr{
@@ -44,7 +75,8 @@ func main() {
 		Net:  "unix",
 	})
 	if err != nil {
-		logger.Fatal("failed to connect to SPIRE server via Unix socket", zap.Error(err))
+		logger.Error("failed to connect to SPIRE server via Unix socket", zap.Error(err))
+		return err
 	}
 	defer spireClient.Release()
 
@@ -71,7 +103,8 @@ func main() {
 	if cfg.GitHubOIDC.Enabled {
 		v, err := githuboidc.NewValidator(ctx, cfg.GitHubOIDC, appMetrics, &logger)
 		if err != nil {
-			logger.Fatal("failed to create GitHub OIDC validator", zap.Error(err))
+			logger.Error("failed to create GitHub OIDC validator", zap.Error(err))
+			return err
 		}
 		// In-memory replay cache only protects against replay within this process. Multi-replica
 		// deployments need a shared backend (e.g. Redis) — a workload could otherwise replay the
@@ -97,37 +130,38 @@ func main() {
 	if cfg.K8sSAToken.Enabled {
 		v, err := k8ssatoken.NewValidator(cfg.K8sSAToken, &logger)
 		if err != nil {
-			logger.Fatal("failed to create K8s SA token validator", zap.Error(err))
+			logger.Error("failed to create K8s SA token validator", zap.Error(err))
+			return err
 		}
 		k8sSATokenValidator = v
 		logger.Info("Kubernetes SA token validator enabled")
 	}
 
 	if githubOIDCValidator == nil && k8sSATokenValidator == nil {
-		logger.Fatal("at least one authentication method must be enabled (githubOIDC or k8sSAToken)")
+		logger.Error("at least one authentication method must be enabled (githubOIDC or k8sSAToken)")
+		return fmt.Errorf("no authentication method enabled")
 	}
 
-	// Run the service
-	if err := service.Run(ctx, cfg, spireClient, githubOIDCValidator, k8sSATokenValidator, appMetrics, &logger); err != nil {
-		os.Exit(1)
-	}
+	return service.Run(ctx, cfg, spireClient, githubOIDCValidator, k8sSATokenValidator, appMetrics, &logger)
 }
 
-func parseFlags(logger *zap.Logger) *config.SpireIdentityExchangeConfig {
+func parseFlags(logger *zap.Logger) (*config.SpireIdentityExchangeConfig, error) {
 	configFile := flag.String("config", "", "Path to spire-identity-exchange JSON configuration file")
 	flag.Parse()
 
 	if *configFile == "" {
-		logger.Fatal("--config flag is required")
+		logger.Error("--config flag is required")
+		return nil, fmt.Errorf("--config flag is required")
 	}
 
 	cfg, err := loadSpireIdentityExchangeConfigFile(*configFile)
 	if err != nil {
-		logger.Fatal("failed to load spire-identity-exchange configuration", zap.String("file", *configFile), zap.Error(err))
+		logger.Error("failed to load spire-identity-exchange configuration", zap.String("file", *configFile), zap.Error(err))
+		return nil, err
 	}
 
 	logger.Info("spire-identity-exchange configuration file is loaded", zap.String("file", *configFile), zap.Any("config", cfg))
-	return cfg
+	return cfg, nil
 }
 
 // loadSpireIdentityExchangeConfigFile loads spire-identity-exchange configuration from a JSON file
