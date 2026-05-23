@@ -16,6 +16,9 @@ import (
 type Validator struct {
 	// Kubernetes API server URL (operator-configured; NEVER derived from the token).
 	apiHost string
+	// Operator-configured cluster identifier injected into claims for SPIFFE ID
+	// derivation. Sourced from config only — never from the request.
+	clusterName string
 	// Pre-built TokenReview verifier. The underlying clientset is goroutine-safe and
 	// reuses HTTP/TLS connections to the API server across requests.
 	verifier utils.K8sSaTokenVerifier
@@ -47,9 +50,10 @@ func NewValidator(cfg config.K8sSATokenConfig, logger *zap.Logger) (*Validator, 
 		zap.Strings("audiences", cfg.Audiences))
 
 	return &Validator{
-		apiHost:  cfg.APIHost,
-		verifier: verifier,
-		logger:   logger,
+		apiHost:     cfg.APIHost,
+		clusterName: cfg.ClusterName,
+		verifier:    verifier,
+		logger:      logger,
 	}, nil
 }
 
@@ -85,6 +89,15 @@ func (v *Validator) Validate(ctx context.Context, token string) (*utils.Claims, 
 	var claims utils.Claims
 	if err := json.Unmarshal(claimsJSON, &claims); err != nil {
 		return nil, fmt.Errorf("failed to decode claims: %w", err)
+	}
+
+	// Inject the operator-configured cluster name so templates can reference
+	// {{.k8s_cluster_name}} bound to the cluster this Validator authenticates against.
+	if v.clusterName != "" {
+		if claims.RawClaims == nil {
+			claims.RawClaims = make(map[string]interface{}, 1)
+		}
+		claims.RawClaims["k8s_cluster_name"] = v.clusterName
 	}
 
 	v.logger.Info("Token validated successfully", zap.String("issuer", claims.Issuer), zap.String("subject", claims.Subject))

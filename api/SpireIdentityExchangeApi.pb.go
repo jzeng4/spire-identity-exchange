@@ -9,6 +9,7 @@ package api
 import (
 	v1 "github.com/spiffe/spire-api-sdk/proto/spire/api/server/svid/v1"
 	types "github.com/spiffe/spire-api-sdk/proto/spire/api/types"
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -70,11 +71,10 @@ func (x *GithubOIDC) GetGithubToken() string {
 
 // K8sSA represents Kubernetes Service Account authentication method
 type K8SSA struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	K8SSAToken     string                 `protobuf:"bytes,1,opt,name=k8sSAToken,proto3" json:"k8sSAToken,omitempty"`
-	K8SClusterName *string                `protobuf:"bytes,2,opt,name=k8sClusterName,proto3,oneof" json:"k8sClusterName,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	K8SSAToken    string                 `protobuf:"bytes,1,opt,name=k8sSAToken,proto3" json:"k8sSAToken,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *K8SSA) Reset() {
@@ -110,13 +110,6 @@ func (*K8SSA) Descriptor() ([]byte, []int) {
 func (x *K8SSA) GetK8SSAToken() string {
 	if x != nil {
 		return x.K8SSAToken
-	}
-	return ""
-}
-
-func (x *K8SSA) GetK8SClusterName() string {
-	if x != nil && x.K8SClusterName != nil {
-		return *x.K8SClusterName
 	}
 	return ""
 }
@@ -413,16 +406,14 @@ var File_SpireIdentityExchangeApi_proto protoreflect.FileDescriptor
 
 const file_SpireIdentityExchangeApi_proto_rawDesc = "" +
 	"\n" +
-	"\x1eSpireIdentityExchangeApi.proto\x12\"proto.spiffe.spireidentityexchange\x1a\x1espire/api/types/x509svid.proto\x1a\x1dspire/api/types/jwtsvid.proto\x1a#spire/api/server/svid/v1/svid.proto\".\n" +
+	"\x1eSpireIdentityExchangeApi.proto\x12\"proto.spiffe.spireidentityexchange\x1a\x1cgoogle/api/annotations.proto\x1a\x1espire/api/types/x509svid.proto\x1a\x1dspire/api/types/jwtsvid.proto\x1a#spire/api/server/svid/v1/svid.proto\".\n" +
 	"\n" +
 	"GithubOIDC\x12 \n" +
-	"\vgithubToken\x18\x01 \x01(\tR\vgithubToken\"g\n" +
+	"\vgithubToken\x18\x01 \x01(\tR\vgithubToken\"=\n" +
 	"\x05K8sSA\x12\x1e\n" +
 	"\n" +
 	"k8sSAToken\x18\x01 \x01(\tR\n" +
-	"k8sSAToken\x12+\n" +
-	"\x0ek8sClusterName\x18\x02 \x01(\tH\x00R\x0ek8sClusterName\x88\x01\x01B\x11\n" +
-	"\x0f_k8sClusterName\"D\n" +
+	"k8sSATokenJ\x04\b\x02\x10\x03R\x0ek8sClusterName\"D\n" +
 	"\x12MintJWTSVIDRequest\x12\x1c\n" +
 	"\taudiences\x18\x01 \x03(\tR\taudiences\x12\x10\n" +
 	"\x03ttl\x18\x02 \x01(\x05R\x03ttl\"'\n" +
@@ -441,9 +432,9 @@ const file_SpireIdentityExchangeApi_proto_rawDesc = "" +
 	"\x17MintCertificateResponse\x125\n" +
 	"\bx509svid\x18\x01 \x01(\v2\x19.spire.api.types.X509SVIDR\bx509svid\x122\n" +
 	"\ajwtSvid\x18\x02 \x01(\v2\x18.spire.api.types.JWTSVIDR\ajwtSvid\x12$\n" +
-	"\rprivateKeyPem\x18\x03 \x01(\fR\rprivateKeyPem2\xa9\x01\n" +
-	"\x18SpireIdentityExchangeApi\x12\x8c\x01\n" +
-	"\x0fMintCertificate\x12:.proto.spiffe.spireidentityexchange.MintCertificateRequest\x1a;.proto.spiffe.spireidentityexchange.MintCertificateResponse\"\x00B1P\x01Z-github.com/spiffe/spire-identity-exchange/apib\x06proto3"
+	"\rprivateKeyPem\x18\x03 \x01(\fR\rprivateKeyPem2\xc8\x01\n" +
+	"\x18SpireIdentityExchangeApi\x12\xab\x01\n" +
+	"\x0fMintCertificate\x12:.proto.spiffe.spireidentityexchange.MintCertificateRequest\x1a;.proto.spiffe.spireidentityexchange.MintCertificateResponse\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/mint-certificateB1P\x01Z-github.com/spiffe/spire-identity-exchange/apib\x06proto3"
 
 var (
 	file_SpireIdentityExchangeApi_proto_rawDescOnce sync.Once
@@ -491,7 +482,6 @@ func file_SpireIdentityExchangeApi_proto_init() {
 	if File_SpireIdentityExchangeApi_proto != nil {
 		return
 	}
-	file_SpireIdentityExchangeApi_proto_msgTypes[1].OneofWrappers = []any{}
 	file_SpireIdentityExchangeApi_proto_msgTypes[4].OneofWrappers = []any{
 		(*MintCertificateRequest_GithubOIDC)(nil),
 		(*MintCertificateRequest_K8SSA)(nil),

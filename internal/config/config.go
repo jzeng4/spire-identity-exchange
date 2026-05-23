@@ -120,6 +120,13 @@ type K8sSATokenConfig struct {
 	// token has been verified.
 	APIHost string `json:"apiHost"`
 
+	// Optional. Operator-defined cluster identifier exposed to the SPIFFE ID template
+	// as {{.k8s_cluster_name}}. This MUST come from configuration — never from the
+	// request — because each Validator authenticates against exactly one cluster
+	// (apiHost) and accepting a caller-supplied value would allow cross-cluster
+	// identity impersonation.
+	ClusterName string `json:"clusterName"`
+
 	// Optional. Expected audiences for incoming service-account tokens. When set,
 	// these are passed in the TokenReview Spec.Audiences and the response's status
 	// audiences must intersect with this list. Strongly recommended: configure a

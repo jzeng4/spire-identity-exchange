@@ -88,12 +88,6 @@ func (h *SpireIdentityExchangeServer) MintCertificateByK8sSAToken(ctx context.Co
 		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("failed to validate K8s SA token: %v", err))
 	}
 	audit.TokenIssuer = claims.Issuer
-	if name := k8sSA.GetK8SClusterName(); name != "" {
-		if claims.RawClaims == nil {
-			claims.RawClaims = make(map[string]interface{}, 1)
-		}
-		claims.RawClaims["k8s_cluster_name"] = name
-	}
 
 	resp, err := h.mintFromClaims(ctx, claims, h.k8sSAToken, req, audit)
 	if err != nil {

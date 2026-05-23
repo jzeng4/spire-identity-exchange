@@ -88,6 +88,7 @@ func RegisterSpireIdentityExchangeApiHandlerServer(ctx context.Context, mux *run
 		}
 		forward_SpireIdentityExchangeApi_MintCertificate_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+
 	return nil
 }
 

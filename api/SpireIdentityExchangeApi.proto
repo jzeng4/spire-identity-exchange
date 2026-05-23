@@ -18,9 +18,11 @@ message GithubOIDC {
 // K8sSA represents Kubernetes Service Account authentication method
 message K8sSA {
   string k8sSAToken = 1;
-  // Optional: caller-supplied cluster identifier exposed to the SPIFFE ID template
-  // as {{.k8s_cluster_name}} when set.
-  optional string k8sClusterName = 2;
+  // Reserved: field 2 previously held an unauthenticated, caller-supplied cluster
+  // name. Cluster identity is now an operator-configured value (k8sSAToken.clusterName)
+  // and is exposed to the SPIFFE ID template as {{.k8s_cluster_name}}.
+  reserved 2;
+  reserved "k8sClusterName";
 }
 
 // MintJWTSVIDRequest contains parameters for JWT-SVID issuance.
