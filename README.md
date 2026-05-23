@@ -157,6 +157,9 @@ build/bin/spire-identity-exchange --config config.example.json
   // Kubernetes service account token validator
   "k8sSAToken": {
     "enabled": false,
+    "apiHost": "https://kubernetes.default.svc:443",  // Required when enabled: operator-trusted K8s API server URL used for TokenReview
+    "clusterName": "my-cluster",                       // Optional: exposed to templates as {{.k8s_cluster_name}}
+    "audiences": ["spire-identity-exchange"],         // Optional but recommended: bind TokenReview to a dedicated audience
     "spiffeIdTemplate": "spiffe://example.org/k8s/{{.sub}}",
     "tls": {
       "caFile":   "/etc/spire-identity-exchange/k8s/ca.crt",    // CA to verify K8s API server
