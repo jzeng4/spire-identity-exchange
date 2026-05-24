@@ -84,17 +84,33 @@ func NewValidator(ctx context.Context, cfg config.GitHubOIDCConfig, m metrics.Me
 	}, nil
 }
 
-// Validate validates an OIDC token and returns claims
+// Validate validates an OIDC token and returns claims.
+//
+// The validate_token metric covers the full validation path — JWKS retrieval, signature
+// parsing, and claim-policy checks — so JWKS outages and policy rejections show up in
+// the same operation counter/histogram instead of disappearing because the metric defer
+// was scoped too narrowly.
 func (gv *githubValidator) Validate(ctx context.Context, token string) (*utils.Claims, error) {
+	now := time.Now()
+	statusCode := codes.OK
+	defer func() {
+		gv.metrics.ObserveOperationDuration(constant.ComponentLabel, constant.PluginLabel, constant.OperationValidateToken, statusCode.String(), time.Since(now).Seconds())
+		gv.metrics.IncOperationCount(constant.ComponentLabel, constant.PluginLabel, constant.OperationValidateToken, statusCode.String())
+	}()
+
 	claims := &utils.Claims{
 		RawClaims: make(map[string]interface{}),
 	}
 
 	if err := gv.validateToken(token, claims); err != nil {
+		statusCode = codes.InvalidArgument
 		return nil, fmt.Errorf("token validation failed: %w", err)
 	}
 
 	if err := gv.validateClaims(claims.RawClaims, gv.config); err != nil {
+		// Claim policy is authorization; distinguish from signature/parse failures so
+		// operators can alert on a spike of "rejected by policy" separately.
+		statusCode = codes.PermissionDenied
 		return nil, fmt.Errorf("claim validation failed: %w", err)
 	}
 
@@ -111,6 +127,9 @@ func (gv *githubValidator) Start(ctx context.Context) error {
 }
 
 // validateToken validates the JWT signature and collects the claims.
+// Metrics for this stage are recorded by the caller (Validate) so JWKS-fetch
+// failures, signature failures, and claim-policy failures share the same operation
+// label and none of them get silently dropped.
 func (gv *githubValidator) validateToken(tokenString string, claims *utils.Claims) error {
 	keys, err := gv.getVerificationKeys()
 	if err != nil {
@@ -124,13 +143,6 @@ func (gv *githubValidator) validateToken(tokenString string, claims *utils.Claim
 	if gv.config.SkipTokenExpiration {
 		parserOpts = append(parserOpts, jwt.WithLeeway(largeLeeway))
 	}
-
-	now := time.Now()
-	statusCode := codes.InvalidArgument
-	defer func() {
-		gv.metrics.ObserveOperationDuration(constant.ComponentLabel, constant.PluginLabel, constant.OperationValidateToken, statusCode.String(), time.Since(now).Seconds())
-		gv.metrics.IncOperationCount(constant.ComponentLabel, constant.PluginLabel, constant.OperationValidateToken, statusCode.String())
-	}()
 
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		switch token.Method.(type) {
@@ -168,7 +180,6 @@ func (gv *githubValidator) validateToken(tokenString string, claims *utils.Claim
 		return fmt.Errorf("audience mismatch: expected %v, got %v", gv.config.Audiences, aud)
 	}
 
-	statusCode = codes.OK
 	return nil
 }
 

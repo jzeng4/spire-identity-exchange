@@ -277,13 +277,33 @@ grpcurl -insecure \
 
 ### Testing with Kubernetes Service Account tokens
 
+The server validates the CSR's URI SAN against the SPIFFE ID it derives from the K8s SA
+token claims using the configured `k8sSAToken.spiffeIdTemplate`. The GitHub-derived
+`CSR_B64` from the previous section will be rejected with a CSR SPIFFE ID mismatch — you
+need a CSR built for the K8s SPIFFE ID. The example below uses `serverKeyGenRequest`
+(no CSR required) to avoid that gotcha; switch to `mintX509SVIDRequest` once you generate
+a CSR whose URI SAN matches the K8s template's output.
+
 ```bash
 K8S_TOKEN=$(kubectl create token my-service-account -n my-namespace)
 
+# Option A — no CSR (server-side key generation)
 grpcurl -insecure \
-  -d "{\"k8sSA\":{\"k8sSAToken\":\"${K8S_TOKEN}\"},\"mintX509SVIDRequest\":{\"csr\":\"${CSR_B64}\"}}" \
+  -d "{\"k8sSA\":{\"k8sSAToken\":\"${K8S_TOKEN}\"},\"serverKeyGenRequest\":{}}" \
   localhost:8443 \
   proto.spiffe.spireidentityexchange.SpireIdentityExchangeApi/MintCertificate
+
+# Option B — CSR-based (build K8S_CSR_B64 from a CSR whose URI SAN matches the
+# K8s template output, e.g. spiffe://example.org/k8s/system:serviceaccount:my-namespace:my-service-account):
+#   openssl req -new -newkey rsa:2048 -nodes -keyout k8s-workload.key \
+#     -subj "/CN=workload" \
+#     -addext "subjectAltName=URI:${K8S_SPIFFE_ID}" \
+#     -out k8s-workload.csr
+#   K8S_CSR_B64=$(openssl req -in k8s-workload.csr -outform DER | base64 | tr -d '\n')
+# grpcurl -insecure \
+#   -d "{\"k8sSA\":{\"k8sSAToken\":\"${K8S_TOKEN}\"},\"mintX509SVIDRequest\":{\"csr\":\"${K8S_CSR_B64}\"}}" \
+#   localhost:8443 \
+#   proto.spiffe.spireidentityexchange.SpireIdentityExchangeApi/MintCertificate
 ```
 
 ### Inspecting the service
