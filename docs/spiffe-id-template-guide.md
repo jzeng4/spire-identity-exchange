@@ -61,6 +61,25 @@ https://docs.github.com/en/actions/reference/openid-connect-reference.
 | `workflow_sha` | Commit SHA of the calling workflow file. | Changes every push | `abc1234...` |
 | `repo_property_*` | Custom repository properties defined at the organization or enterprise level, prefixed with `repo_property_`. Enables attribute-based access control without hardcoding repo names. | Stable while property exists | `repo_property_team=platform` |
 
+### Template variables vs. raw claims
+
+The table above lists JWT **claims** as the GitHub OIDC issuer emits them. spire-identity-exchange
+**rewrites and sanitizes** some of these before exposing them to the SPIFFE ID template, so the
+template variable does NOT always match the raw claim:
+
+| Template variable | Source | Sanitized? | Notes |
+|---|---|---|---|
+| `{{.repository}}` | repo portion of the `repository` claim (after the slash) | yes — lowercased, non-`[a-z0-9-]` replaced with `-` | **Not the raw `owner/name`.** Using just `{{.repository}}` collapses identities across orgs (`acme/app` and `globex/app` both become `app`). Pair with `{{.org}}` or `{{.repository_owner}}`. |
+| `{{.org}}` | owner portion of the `repository` claim (before the slash) | yes | Convenience alias for `{{.repository_owner}}`. |
+| `{{.repository_owner}}` | raw `repository_owner` claim | no | Use this when you want the owner name unmodified. |
+| `{{.ref}}` | `ref` claim with `refs/heads/` / `refs/tags/` prefix stripped, then sanitized | yes | Use `{{.ref_type}}` alongside to distinguish branch vs. tag. |
+| `{{.workflow}}` / `{{.workflow_ref}}` / `{{.job_workflow_ref}}` / `{{.sha}}` / `{{.actor}}` / `{{.runner_environment}}` / `{{.run_id}}` / `{{.run_number}}` | matching JWT claim | yes — lowercased, non-`[a-z0-9-]` replaced with `-` | Sanitization is required to produce a valid SPIFFE path segment. |
+| `{{.trust_domain}}` | configured `spire.trustDomain` | n/a | Constant per service instance; not from the JWT. |
+| any other claim, e.g. `{{.environment}}` | raw JWT claim | no | Available unmodified via `{{.claimName}}`. Use sparingly — special characters in raw claims may produce invalid SPIFFE IDs. |
+
+Rule of thumb: when in doubt about whether a template variable is sanitized, dump the rendered
+SPIFFE ID at config-validation time against a sample token.
+
 ### The `sub` claim
 
 GitHub constructs `sub` as a composite string. Its structure depends on the job context:

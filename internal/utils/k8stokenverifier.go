@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	authv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -11,9 +12,17 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// K8sSaTokenVerifier interface defines the token verification contract
+// saUsernamePrefix is the K8s convention for service-account principals returned by
+// the TokenReview API. Any other principal — node, OIDC user, bootstrap token — would
+// be a non-SA bearer token and must not be accepted by this validator.
+const saUsernamePrefix = "system:serviceaccount:"
+
+// K8sSaTokenVerifier interface defines the token verification contract.
+// Verify returns the authenticated username (e.g. system:serviceaccount:ns:sa) on success
+// so callers can cross-check it against the JWT sub claim before deriving identity from
+// the unverified JWT.
 type K8sSaTokenVerifier interface {
-	Verify(ctx context.Context, token string) error
+	Verify(ctx context.Context, token string) (string, error)
 }
 
 // k8sSaTokenVerifierImpl implements K8sSaTokenVerifier
@@ -56,9 +65,9 @@ func newK8sClientConfig(k8sAPIHost, k8sClientCertFile, k8sClientKeyFile, k8sCAFi
 // When audiences are configured, they are sent in TokenReview Spec.Audiences so
 // Kubernetes will only authenticate tokens minted for one of those audiences, and
 // the response's status audiences must intersect with the configured list.
-func (v *k8sSaTokenVerifierImpl) Verify(ctx context.Context, token string) error {
+func (v *k8sSaTokenVerifierImpl) Verify(ctx context.Context, token string) (string, error) {
 	if v.authClient == nil {
-		return fmt.Errorf("authentication client is nil")
+		return "", fmt.Errorf("authentication client is nil")
 	}
 
 	tr := &authv1.TokenReview{
@@ -71,19 +80,28 @@ func (v *k8sSaTokenVerifierImpl) Verify(ctx context.Context, token string) error
 	result, err := v.authClient.TokenReviews().Create(
 		ctx, tr, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to call TokenReview API: %w", err)
+		return "", fmt.Errorf("failed to call TokenReview API: %w", err)
 	}
 
 	if !result.Status.Authenticated {
-		return fmt.Errorf("SA token authentication failed: %s", result.Status.Error)
+		return "", fmt.Errorf("SA token authentication failed: %s", result.Status.Error)
+	}
+
+	// TokenReview returns Authenticated=true for any bearer credential the API server
+	// accepts (SA tokens, user tokens, bootstrap tokens, OIDC, ...). Require the
+	// principal to be a service account so a non-SA JWT can't slip through and feed
+	// arbitrary claims into the SPIFFE ID template downstream.
+	username := result.Status.User.Username
+	if !strings.HasPrefix(username, saUsernamePrefix) {
+		return "", fmt.Errorf("authenticated principal %q is not a service account", username)
 	}
 
 	if len(v.audiences) > 0 {
 		if !audiencesIntersect(v.audiences, result.Status.Audiences) {
-			return fmt.Errorf("token audiences %v do not match expected audiences %v", result.Status.Audiences, v.audiences)
+			return "", fmt.Errorf("token audiences %v do not match expected audiences %v", result.Status.Audiences, v.audiences)
 		}
 	}
-	return nil
+	return username, nil
 }
 
 func audiencesIntersect(expected, got []string) bool {

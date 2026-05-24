@@ -26,6 +26,7 @@ type mockAuthV1Client struct {
 	errorMessage      string
 	returnAudiences   []string
 	gotAudiences      []string
+	returnUsername    string // defaults to a valid SA username when empty
 }
 
 // TokenReviews implements AuthenticationV1Interface
@@ -56,10 +57,15 @@ func (m *mockTokenReviewsClient) Create(ctx context.Context, tokenReview *authv1
 		return nil, fmt.Errorf("mock API error: %s", m.parent.errorMessage)
 	}
 
+	username := m.parent.returnUsername
+	if username == "" {
+		username = "system:serviceaccount:default:mock-sa"
+	}
 	result := &authv1.TokenReview{
 		Status: authv1.TokenReviewStatus{
 			Authenticated: m.parent.tokenValid,
 			Audiences:     m.parent.returnAudiences,
+			User:          authv1.UserInfo{Username: username},
 		},
 	}
 
@@ -213,7 +219,7 @@ func TestK8sSaTokenVerifierImplVerify(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			verifier := newK8sSaTokenVerifier(tt.authClient, nil)
-			err := verifier.Verify(tt.ctx, tt.token)
+			_, err := verifier.Verify(tt.ctx, tt.token)
 
 			if tt.expectError {
 				if err == nil {
@@ -242,7 +248,7 @@ func TestK8sSaTokenVerifierWithContextCancellation(t *testing.T) {
 		cancelledCtx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		err := verifier.Verify(cancelledCtx, testToken)
+		_, err := verifier.Verify(cancelledCtx, testToken)
 		_ = err
 	})
 
@@ -257,7 +263,7 @@ func TestK8sSaTokenVerifierWithContextCancellation(t *testing.T) {
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		err := verifier.Verify(timeoutCtx, validToken)
+		_, err := verifier.Verify(timeoutCtx, validToken)
 		if err != nil {
 			t.Errorf("Unexpected error with timeout context: %v", err)
 		}
@@ -271,7 +277,7 @@ func TestK8sSaTokenVerifierAudienceBinding(t *testing.T) {
 			returnAudiences: []string{"spire-identity-exchange"},
 		}
 		verifier := newK8sSaTokenVerifier(mockClient, []string{"spire-identity-exchange"})
-		if err := verifier.Verify(context.Background(), validToken); err != nil {
+		if _, err := verifier.Verify(context.Background(), validToken); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(mockClient.gotAudiences) != 1 || mockClient.gotAudiences[0] != "spire-identity-exchange" {
@@ -285,7 +291,7 @@ func TestK8sSaTokenVerifierAudienceBinding(t *testing.T) {
 			returnAudiences: []string{"some-other-service"},
 		}
 		verifier := newK8sSaTokenVerifier(mockClient, []string{"spire-identity-exchange"})
-		err := verifier.Verify(context.Background(), validToken)
+		_, err := verifier.Verify(context.Background(), validToken)
 		if err == nil || !strings.Contains(err.Error(), "do not match expected audiences") {
 			t.Errorf("expected audience-mismatch rejection, got %v", err)
 		}
@@ -297,8 +303,41 @@ func TestK8sSaTokenVerifierAudienceBinding(t *testing.T) {
 			returnAudiences: []string{"any-audience"},
 		}
 		verifier := newK8sSaTokenVerifier(mockClient, nil)
-		if err := verifier.Verify(context.Background(), validToken); err != nil {
+		if _, err := verifier.Verify(context.Background(), validToken); err != nil {
 			t.Errorf("expected no error with audience binding disabled, got: %v", err)
+		}
+	})
+}
+
+func TestK8sSaTokenVerifierRejectsNonServiceAccountPrincipals(t *testing.T) {
+	cases := []struct {
+		name     string
+		username string
+	}{
+		{"oidc user", "alice@example.com"},
+		{"node principal", "system:node:worker-1"},
+		{"bootstrap token", "system:bootstrap:abcde1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := &mockAuthV1Client{tokenValid: true, returnUsername: tc.username}
+			verifier := newK8sSaTokenVerifier(mockClient, nil)
+			user, err := verifier.Verify(context.Background(), validToken)
+			if err == nil || !strings.Contains(err.Error(), "not a service account") {
+				t.Errorf("expected non-SA rejection for %q, got user=%q err=%v", tc.username, user, err)
+			}
+		})
+	}
+
+	t.Run("service-account principal accepted", func(t *testing.T) {
+		mockClient := &mockAuthV1Client{tokenValid: true, returnUsername: "system:serviceaccount:prod:payment"}
+		verifier := newK8sSaTokenVerifier(mockClient, nil)
+		user, err := verifier.Verify(context.Background(), validToken)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if user != "system:serviceaccount:prod:payment" {
+			t.Errorf("expected username returned, got %q", user)
 		}
 	})
 }

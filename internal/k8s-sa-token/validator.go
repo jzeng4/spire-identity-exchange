@@ -77,8 +77,18 @@ func (v *Validator) Validate(ctx context.Context, token string) (*utils.Claims, 
 
 	v.logger.Info("Validating token via configured K8s API server", zap.String("apiHost", v.apiHost))
 
-	if err := v.verifier.Verify(ctx, token); err != nil {
+	username, err := v.verifier.Verify(ctx, token)
+	if err != nil {
 		return nil, fmt.Errorf("token verification failed: %w", err)
+	}
+
+	// The TokenReview-authenticated principal must match the JWT `sub`. Without this
+	// cross-check, a different (non-SA-but-API-server-accepted) JWT could supply
+	// arbitrary claims for SPIFFE ID derivation; the Verify-side SA-prefix check is
+	// the first half of this defense, and matching sub completes it.
+	jwtSub, _ := rawClaims["sub"].(string)
+	if jwtSub != username {
+		return nil, fmt.Errorf("JWT sub %q does not match TokenReview principal %q", jwtSub, username)
 	}
 
 	// Populate both RegisteredClaims and RawClaims via the Claims UnmarshalJSON.
