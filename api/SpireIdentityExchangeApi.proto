@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package proto.spiffe.spireidentityexchange;
+
+import "google/api/annotations.proto";
+import "spire/api/types/x509svid.proto";
+import "spire/api/types/jwtsvid.proto";
+import "spire/api/server/svid/v1/svid.proto";
+
+option go_package = "github.com/spiffe/spire-identity-exchange/api";
+option java_multiple_files = true;
+
+// GithubOIDC represents GitHub OIDC authentication method
+message GithubOIDC {
+  string githubToken = 1;
+}
+
+// K8sSA represents Kubernetes Service Account authentication method
+message K8sSA {
+  string k8sSAToken = 1;
+  // Reserved: field 2 previously held an unauthenticated, caller-supplied cluster
+  // name. Cluster identity is now an operator-configured value (k8sSAToken.clusterName)
+  // and is exposed to the SPIFFE ID template as {{.k8s_cluster_name}}.
+  reserved 2;
+  reserved "k8sClusterName";
+}
+
+// MintJWTSVIDRequest contains parameters for JWT-SVID issuance.
+// The SPIFFE ID is derived from the workload token claims by spire-identity-exchange.
+message MintJWTSVIDRequest {
+  // Required. Intended audiences for the JWT-SVID.
+  repeated string audiences = 1;
+  // Optional. TTL in seconds. 0 means use the configured default.
+  int32 ttl = 2;
+}
+
+// ServerKeyGenRequest requests server-side key generation for X.509 SVID issuance.
+// The client submits only a workload token; spire-identity-exchange generates an ECDSA
+// P-256 key pair, signs a CSR, and returns both the certificate chain and the private
+// key over TLS. The private key is never stored or logged by spire-identity-exchange.
+message ServerKeyGenRequest {
+  // Optional. TTL in seconds. 0 means use the configured default.
+  int32 ttl = 1;
+}
+
+// SpireIdentityExchangeApi is the gRPC service for the spire-identity-exchange API.
+// It exposes the OSS SPIRE server API to workloads that cannot run a SPIRE agent.
+// https://github.com/spiffe/spire-api-sdk/tree/main/proto/spire/api/server
+service SpireIdentityExchangeApi {
+  // MintCertificate issues a SPIFFE SVID (X.509 or JWT) for the authenticated workload.
+  rpc MintCertificate(MintCertificateRequest) returns (MintCertificateResponse) {
+    option (google.api.http) = {
+      post: "/v1/mint-certificate"
+      body: "*"
+    };
+  }
+}
+
+// MintCertificateRequest is the request for the MintCertificate method.
+// Exactly one AuthMethod and exactly one of the three SVID request fields must be set.
+message MintCertificateRequest {
+  // Specify the authentication method.
+  oneof AuthMethod {
+    GithubOIDC githubOIDC = 1;
+    K8sSA k8sSA = 2;
+  }
+  // CSR-based X.509 SVID issuance (default mode). Client generates the key pair and
+  // submits a PKCS#10 CSR; the private key never leaves the client.
+  // Ref: https://github.com/spiffe/spire-api-sdk/blob/main/proto/spire/api/server/svid/v1/svid.proto
+  spire.api.server.svid.v1.MintX509SVIDRequest mintX509SVIDRequest = 3;
+  // JWT-SVID issuance. No CSR required; specify target audiences.
+  MintJWTSVIDRequest mintJWTSVIDRequest = 4;
+  // Server-side key generation for X.509 SVID. No CSR required;
+  // spire-identity-exchange generates the ECDSA P-256 key pair. Requires TLS.
+  ServerKeyGenRequest serverKeyGenRequest = 5;
+}
+
+// MintCertificateResponse is the response for the MintCertificate method.
+message MintCertificateResponse {
+  // The minted X.509 SVID. Set for CSR-based and server-side key generation requests.
+  // Ref: https://github.com/spiffe/spire-api-sdk/blob/main/proto/spire/api/types/x509svid.proto
+  spire.api.types.X509SVID x509svid = 1;
+  // The minted JWT-SVID. Set for JWT-SVID issuance requests.
+  // Ref: https://github.com/spiffe/spire-api-sdk/blob/main/proto/spire/api/types/jwtsvid.proto
+  spire.api.types.JWTSVID jwtSvid = 2;
+  // PEM-encoded PKCS#8 private key. Set only when serverKeyGenRequest was used.
+  // Treat as a secret; transmitted over TLS only and never stored or logged.
+  bytes privateKeyPem = 3;
+}
