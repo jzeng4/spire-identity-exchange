@@ -1,0 +1,83 @@
+name: Test
+
+on:
+  pull_request:
+    types: [synchronize, opened, reopened]
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  basic-tests:
+    name: Run Basic Tests
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - id: set-matrix-integration
+        name: Do basic tests
+        run: |
+          make
+
+  build-matrix:
+    name: Build matrix
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - id: set-matrix-integration
+        name: Collect all integration tests
+        run: |
+          integrationtests="$(find tests/integration -maxdepth 2 -type f -name run-tests.sh | xargs -I % dirname %)"
+          integrationtests_json="$(echo "$integrationtests" | jq -c --slurp --raw-input 'split("\n") | map(select(. != ""))')"
+          echo "${integrationtests_json}"
+          echo "integrationtests=$integrationtests_json" >>"$GITHUB_OUTPUT"
+
+    outputs:
+      integrationtests: ${{ steps.set-matrix-integration.outputs.integrationtests }}
+
+  integration-test:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      id-token: write
+      contents: read
+
+    needs:
+      - basic-tests
+      - build-matrix
+
+    strategy:
+      fail-fast: false
+      matrix:
+        integrationtest:
+          - ${{ fromJson(needs.build-matrix.outputs.integrationtests) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+      - name: Request Custom JWT
+        id: token_request
+        run: |
+          AUDIENCE="spire-identity-exchange"
+          RESPONSE=$(curl -sS -G \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            --data-urlencode "audience=$AUDIENCE" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL")
+          if ! echo "$RESPONSE" | jq -e . >/dev/null 2>&1; then
+            echo "::error::GitHub did not return valid JSON. Response was: $RESPONSE"
+            exit 1
+          fi
+          JWT=$(echo "$RESPONSE" | jq -r '.value')
+          echo "::add-mask::$JWT"
+          echo "jwt=$JWT" >> $GITHUB_OUTPUT
+      - name: Install and test integration
+        run: |
+          export GITHUB_TOKEN="${{ steps.token_request.outputs.jwt }}"
+          ${{ matrix.integrationtest }}/run-tests.sh
+
