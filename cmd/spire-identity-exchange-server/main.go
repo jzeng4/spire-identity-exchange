@@ -16,7 +16,9 @@ import (
 	"github.com/spiffe/spire-identity-exchange/internal/config"
 	prommetrics "github.com/spiffe/spire-identity-exchange/internal/metrics/prometheus"
 	"github.com/spiffe/spire-identity-exchange/internal/service"
+	"github.com/spiffe/spire-identity-exchange/internal/service/rest"
 	"github.com/spiffe/spire-identity-exchange/internal/validator"
+	pkggithub "github.com/spiffe/spire-identity-exchange/pkg/validator/github"
 	"github.com/spiffe/spire/cmd/spire-server/util"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -144,7 +146,35 @@ func run() error {
 		return fmt.Errorf("no authentication method enabled")
 	}
 
-	return service.Run(ctx, cfg, spireClient, githubOIDCValidator, k8sSATokenValidator, appMetrics, &logger)
+	// Build the REST plugin registry from operator config. Only registers a
+	// plugin when its auth method is enabled. The REST surface uses these
+	// pkg/validator validators directly because the pkg version exposes
+	// GenerateSelectors (needed for the delegated path); the internal/
+	// validators above remain in use by the gRPC broker path.
+	//
+	// TODO: replay-cache wrap the pkg/validator instances too. The existing
+	// internal/cache.NewReplayCheckingValidator wraps the internal validator
+	// interface; equivalent wrapping for the pkg validator is a follow-up.
+	restPlugins := rest.PluginSet{}
+	if cfg.GitHubOIDC.Enabled && cfg.Server.RestPort != 0 {
+		ghCfg := pkggithub.Config{
+			IssuerURL:           cfg.GitHubOIDC.Issuer,
+			Audiences:           cfg.GitHubOIDC.Audiences,
+			AllowedRepositories: cfg.GitHubOIDC.AllowedRepositories,
+		}
+		ghValidator, err := pkggithub.NewValidator(ghCfg)
+		if err != nil {
+			logger.Error("failed to build pkg github validator for REST path", zap.Error(err))
+			return err
+		}
+		restPlugins["github"] = rest.Plugin{
+			Validator:         ghValidator,
+			SelectorGenerator: ghValidator,
+		}
+		logger.Info("REST plugin registered", zap.String("name", "github"))
+	}
+
+	return service.Run(ctx, cfg, spireClient, githubOIDCValidator, k8sSATokenValidator, service.RESTDeps{Plugins: restPlugins}, appMetrics, &logger)
 }
 
 func parseFlags(logger *zap.Logger) (*config.SpireIdentityExchangeConfig, error) {
