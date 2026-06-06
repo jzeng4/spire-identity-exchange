@@ -411,11 +411,20 @@ func handleGetX509SVID(cfg *config.SpireIdentityExchangeConfig, cache *trustBund
 			return
 		}
 
+		// Refuse to return a partial response: clients need the bundle to chain-validate
+		// the cert, so an empty bundle would leave them unable to use the SVID.
+		bundle := cache.Get()
+		if len(bundle) == 0 {
+			logger.Warn("SVID issued but trust bundle cache is empty or warming up")
+			http.Error(w, "Trust bundle warming up or unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
 		resp := x509SVIDResponse{
 			SpiffeID:  svid.SpiffeID,
 			Cert:      encodeCertChainPEM(svid.CertChain),
 			Key:       encodePKCS8KeyPEM(svid.PrivateKey),
-			Bundle:    string(cache.Get()),
+			Bundle:    string(bundle),
 			ExpiresAt: svid.ExpiresAt.Unix(),
 		}
 		w.Header().Set("Content-Type", "application/json")
