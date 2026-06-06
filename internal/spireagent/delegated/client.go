@@ -75,6 +75,9 @@ func New(socketPath string) (*Client, error) {
 	if socketPath == "" {
 		return nil, errors.New("delegated socket path is required")
 	}
+	if socketPath[0] != '/' {
+		return nil, fmt.Errorf("delegated socket path must be absolute: %q", socketPath)
+	}
 	conn, err := grpc.NewClient(
 		"unix://"+socketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
