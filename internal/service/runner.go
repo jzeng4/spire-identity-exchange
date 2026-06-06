@@ -191,6 +191,17 @@ func runSpireIdentityExchangeServer(
 		delegatedClient *delegated.Client
 	)
 	if cfg.Server.RestPort != 0 {
+		// Build all REST deps before spawning the watcher goroutine — otherwise an
+		// error from a later init step (e.g. delegated.New) returns with the watcher
+		// still running and wlaClient never explicitly closed; the goroutine only
+		// unwinds on context cancellation, which leaks an FD/goroutine in any caller
+		// that doesn't cancel ctx on the error path (notably tests).
+		logger.Info("connecting to delegated identity socket", zap.String("socket_path", cfg.SPIRE.AgentDelegatedSocketPath))
+		delegatedClient, err = delegated.New(cfg.SPIRE.AgentDelegatedSocketPath)
+		if err != nil {
+			return fmt.Errorf("failed to create delegated identity client: %w", err)
+		}
+
 		// Trust bundle cache fed by Main agent's Workload API.
 		cache := &trustBundleCache{logger: logger}
 		socketAddr := "unix://" + cfg.SPIRE.AgentWorkloadSocketPath
@@ -198,6 +209,7 @@ func runSpireIdentityExchangeServer(
 
 		wlaClient, err := workloadapi.New(ctx, workloadapi.WithAddr(socketAddr))
 		if err != nil {
+			_ = delegatedClient.Close()
 			return fmt.Errorf("failed to create workload API client: %w", err)
 		}
 		go func() {
@@ -206,13 +218,6 @@ func runSpireIdentityExchangeServer(
 				logger.Error("workload API watcher stopped with error", zap.Error(watchErr))
 			}
 		}()
-
-		// Delegated Identity client to SIX's delegated socket.
-		logger.Info("connecting to delegated identity socket", zap.String("socket_path", cfg.SPIRE.AgentDelegatedSocketPath))
-		delegatedClient, err = delegated.New(cfg.SPIRE.AgentDelegatedSocketPath)
-		if err != nil {
-			return fmt.Errorf("failed to create delegated identity client: %w", err)
-		}
 
 		mux := http.NewServeMux()
 		mux.HandleFunc("GET /api/v1/trustbundle/x509", handleTrustBundleX509(cache, logger))
@@ -404,6 +409,16 @@ func handleGetX509SVID(cfg *config.SpireIdentityExchangeConfig, cache *trustBund
 		case errors.Is(err, delegated.ErrUnavailable):
 			logger.Error("delegated API unavailable", zap.Error(err))
 			http.Error(w, "Delegated issuance unavailable", http.StatusServiceUnavailable)
+			return
+		case errors.Is(err, delegated.ErrInvalidArgument):
+			// The agent rejected the selectors as malformed. SIE built the
+			// selectors from claims it just validated, so this is a server-side
+			// bug, not a client request error — 500, log the agent's reason.
+			logger.Error("delegated API rejected selectors as invalid",
+				zap.String("stack", stack),
+				zap.Any("selectors", debugSelectors(selectors)),
+				zap.Error(err))
+			http.Error(w, "Issuance failed", http.StatusInternalServerError)
 			return
 		case err != nil:
 			logger.Error("delegated svid fetch failed", zap.Error(err))

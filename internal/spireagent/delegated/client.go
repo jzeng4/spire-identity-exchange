@@ -41,6 +41,13 @@ var ErrPermissionDenied = errors.New("caller not in authorized_delegates")
 // Translated to HTTP 503 by callers.
 var ErrUnavailable = errors.New("delegated identity API unavailable")
 
+// ErrInvalidArgument indicates the agent rejected the request as malformed —
+// most commonly a selector with an unsupported type or an empty value. This
+// is almost always a server-side bug in SIE's selector generator rather than
+// something the HTTP client can correct, so callers translate it to HTTP 500
+// and log the underlying agent message.
+var ErrInvalidArgument = errors.New("delegated identity API rejected the request as invalid")
+
 // X509SVID is the wire-decoded result of an X.509 SVID fetch.
 type X509SVID struct {
 	SpiffeID   string
@@ -204,8 +211,10 @@ func translateRPCError(err error) error {
 	switch st.Code() {
 	case codes.PermissionDenied:
 		return fmt.Errorf("%w: %s", ErrPermissionDenied, st.Message())
-	case codes.NotFound, codes.InvalidArgument:
+	case codes.NotFound:
 		return fmt.Errorf("%w: %s", ErrNoMatchingEntry, st.Message())
+	case codes.InvalidArgument:
+		return fmt.Errorf("%w: %s", ErrInvalidArgument, st.Message())
 	case codes.Unavailable, codes.DeadlineExceeded:
 		return fmt.Errorf("%w: %s", ErrUnavailable, st.Message())
 	default:
