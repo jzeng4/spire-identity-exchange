@@ -207,7 +207,7 @@ func runSpireIdentityExchangeServer(
 			}
 		}()
 
-		// Delegated Identity client to SIX's admin socket.
+		// Delegated Identity client to SIX's delegated socket.
 		logger.Info("connecting to delegated identity socket", zap.String("socket_path", cfg.SPIRE.AgentDelegatedSocketPath))
 		delegatedClient, err = delegated.New(cfg.SPIRE.AgentDelegatedSocketPath)
 		if err != nil {
