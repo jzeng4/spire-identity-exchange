@@ -108,11 +108,11 @@ func (c *Client) FetchX509SVID(ctx context.Context, selectors []*types.Selector)
 		return nil, errors.New("at least one selector is required")
 	}
 
-	// A short cancel context guards against the stream hanging if the agent
+	// A short timeout guards against the stream hanging if the agent
 	// accepts the connection but never sends a message. The first message is
 	// the agent's snapshot of matching SVIDs, which it should produce
 	// immediately after attesting the caller.
-	streamCtx, cancel := context.WithCancel(ctx)
+	streamCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	stream, err := c.api.SubscribeToX509SVIDs(streamCtx, &delegatedidentityv1.SubscribeToX509SVIDsRequest{
